@@ -2,7 +2,7 @@
     "name": "auto-js-vscodeext",
     "displayName": "Auto.js-VSCodeExt",
     "description": "Just a simple development plugin for Android app Auto.js",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "publisher": "hyb1996",
     "engines": {
         "vscode": "^1.17.0"
@@ -16,8 +16,9 @@
         "onCommand:extension.run",
         "onCommand:extension.runOnDevice",
         "onCommand:extension.stop",
-        "onCommand:extension.stopAll"
-        
+        "onCommand:extension.stopAll",
+        "onCommand:extension.save",
+        "onCommand:extension.saveToDevice"
     ],
     "main": "./out/extension",
     "contributes": {
@@ -42,6 +43,12 @@
         },{
             "command": "extension.rerun",
             "title": "Auto.js: Rerun"
+        },{
+            "command": "extension.save",
+            "title": "Auto.js: Save"
+        },{
+            "command": "extension.saveToDevice",
+            "title": "Auto.js: Save On Device"
         }
     ],
         "keybindings": [{
@@ -63,6 +70,11 @@
             "command": "extension.rerun",
             "key": "ctrl+shift+f5",
             "mac": "cmd+shift+f5",
+            "when": "editorTextFocus"
+        },{
+            "command": "extension.save",
+            "key": "ctrl+shift+S",
+            "mac": "cmd+shift+S",
             "when": "editorTextFocus"
         }]
     },

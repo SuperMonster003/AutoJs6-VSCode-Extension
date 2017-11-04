@@ -64,6 +64,10 @@ class Extension {
     }
     
     runOnDevice(){
+        this.selectDevice(device => this.runOn(device));
+    }
+    
+    selectDevice(callback){
         let devices = server.devices;
         if(recentDevice){
             let i = devices.indexOf(recentDevice);
@@ -78,10 +82,10 @@ class Extension {
              .then(select => {
                 let device = devices[names.indexOf(select)];
                 recentDevice = device;
-                this.runOn(device);
+                callback(device);
              });
     }
-    
+
     runOn(target: AutoJs | Device){
         let editor = vscode.window.activeTextEditor;
         target.send({
@@ -92,10 +96,29 @@ class Extension {
             'script': editor.document.getText()
         })
     }
+
+    save(){
+        this.saveTo(server);
+    }
+
+    saveToDevice(){
+        this.selectDevice(device => this.saveTo(device));
+    }
+
+    saveTo(target: AutoJs | Device){
+        let editor = vscode.window.activeTextEditor;
+        target.send({
+            'command': 'save',
+            'type': 'command',
+            'view_id':  editor.document.fileName,
+            'name':  editor.document.fileName,
+            'script': editor.document.getText()
+        })
+    }
 };
 
 
-const commands = ['startServer', 'stopServer', 'run', 'runOnDevice', 'stop', 'stopAll', 'rerun'];
+const commands = ['startServer', 'stopServer', 'run', 'runOnDevice', 'stop', 'stopAll', 'rerun', 'save', 'saveToDevice'];
 let extension = new Extension();
 
 export function activate(context: vscode.ExtensionContext) {
