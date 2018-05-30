@@ -13,9 +13,22 @@
 * 在VS Code的开发者工具实时显示Auto.js的日志与输出
 * 在VS Code命令中增加Run, Stop, Rerun, Stop all等选项。可以在手机与电脑连接后把Sublime编辑器中的脚本推送到AutoJs中执行，或者停止AutoJs中运行的脚本。
 
-##  Usage
+## Usage
 
-按 `Ctrl+Shift+P` 或点击"查看"->"命令面板"可调出命令面包，输入 `Auto.js` 可以看到几个命令：
+### Step 1
+按 `Ctrl+Shift+P` 或点击"查看"->"命令面板"可调出命令面板，输入 `Auto.js` 可以看到几个命令，移动光标到命令`Auto.js: Start Server`，按回车键执行该命令。
+
+此时VS Code会在右上角显示"Auto.js server running"，即开启服务成功。
+
+### Step 2
+将手机连接到电脑启用的Wifi或者同一局域网中。通过命令行ipconfig(或者其他操作系统的相同功能命令)查看电脑的IP地址。在[Auto.js](https://github.com/hyb1996/Auto.js)的侧拉菜单中启用调试服务，并输入IP地址，等待连接成功。
+
+### Step 3
+之后就可以在电脑上编辑JavaScript文件并通过命令`Run`或者按键`F5`在手机上运行了。
+
+## Commands
+
+按 `Ctrl+Shift+P` 或点击"查看"->"命令面板"可调出命令面板，输入 `Auto.js` 可以看到几个命令：
 * Start Server: 启动插件服务。之后在确保手机和电脑在同一区域网的情况下，在Auto.js的侧拉菜单中使用连接电脑功能连接。
 * Stop Server: 停止插件服务。
 * Run 运行当前编辑器的脚本。如果有多个设备连接，则在所有设备运行。
