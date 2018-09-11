@@ -22,61 +22,76 @@
     ],
     "main": "./out/extension",
     "contributes": {
-        "commands": [{
-            "command": "extension.startServer",
-            "title": "Auto.js: Start Server"
-        }, {
-            "command": "extension.stopServer",
-            "title": "Auto.js: Stop Server"
-        },{
-            "command": "extension.run",
-            "title": "Auto.js: Run"
-        },{
-            "command": "extension.runOnDevice",
-            "title": "Auto.js: Run On Device"
-        },{
-            "command": "extension.stop",
-            "title": "Auto.js: Stop"
-        },{
-            "command": "extension.stopAll",
-            "title": "Auto.js: Stop All"
-        },{
-            "command": "extension.rerun",
-            "title": "Auto.js: Rerun"
-        },{
-            "command": "extension.save",
-            "title": "Auto.js: Save"
-        },{
-            "command": "extension.saveToDevice",
-            "title": "Auto.js: Save On Device"
-        }
-    ],
-        "keybindings": [{
-            "command": "extension.run",
-            "key": "f5",
-            "mac": "f5",
-            "when": "editorTextFocus"
-        },{
-            "command": "extension.stop",
-            "key": "shift+f5",
-            "mac": "shift+f5",
-            "when": "editorTextFocus"
-        },{
-            "command": "extension.runOnDevice",
-            "key": "ctrl+f5",
-            "mac": "cmd+f5",
-            "when": "editorTextFocus"
-        },{
-            "command": "extension.rerun",
-            "key": "ctrl+shift+f5",
-            "mac": "cmd+shift+f5",
-            "when": "editorTextFocus"
-        },{
-            "command": "extension.save",
-            "key": "ctrl+shift+S",
-            "mac": "cmd+shift+S",
-            "when": "editorTextFocus"
-        }]
+        "commands": [
+            {
+                "command": "extension.startServer",
+                "title": "Auto.js: Start Server"
+            },
+            {
+                "command": "extension.stopServer",
+                "title": "Auto.js: Stop Server"
+            },
+            {
+                "command": "extension.run",
+                "title": "Auto.js: Run"
+            },
+            {
+                "command": "extension.runOnDevice",
+                "title": "Auto.js: Run On Device"
+            },
+            {
+                "command": "extension.stop",
+                "title": "Auto.js: Stop"
+            },
+            {
+                "command": "extension.stopAll",
+                "title": "Auto.js: Stop All"
+            },
+            {
+                "command": "extension.rerun",
+                "title": "Auto.js: Rerun"
+            },
+            {
+                "command": "extension.save",
+                "title": "Auto.js: Save"
+            },
+            {
+                "command": "extension.saveToDevice",
+                "title": "Auto.js: Save On Device"
+            }
+        ],
+        "keybindings": [
+            {
+                "command": "extension.run",
+                "key": "f5",
+                "mac": "f5",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.stop",
+                "key": "shift+f5",
+                "mac": "shift+f5",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.runOnDevice",
+                "key": "ctrl+f5",
+                "mac": "cmd+f5",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.rerun",
+                "key": "ctrl+shift+f5",
+                "mac": "cmd+shift+f5",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.save",
+                "key": "ctrl+shift+S",
+                "mac": "cmd+shift+S",
+                "when": "editorTextFocus"
+            }
+        ]
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
@@ -90,5 +105,8 @@
         "vscode": "^1.1.5",
         "@types/node": "^7.0.43",
         "@types/mocha": "^2.2.42"
+    },
+    "dependencies": {
+        "json-socket": "^0.3.0"
     }
 }

@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import {AutoJs, Device} from './autojs';
 
 
-var server = new AutoJs(1209);
+var server = new AutoJs(9317);
 var recentDevice = null;
 
 server

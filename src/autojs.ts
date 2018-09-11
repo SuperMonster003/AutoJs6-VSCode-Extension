@@ -5,12 +5,14 @@ var JsonSocket = require('json-socket');
 
 export class Device extends EventEmitter{
     public name: string;
-    private socket;
+    private socket: net.Socket;
+    private jsonSocket;
 
     constructor(socket:net.Socket){
         super();
         socket.setEncoding('utf-8');
-        this.socket = new JsonSocket(socket);
+        this.socket = socket;
+        this.jsonSocket = new JsonSocket(socket);
         this.readFromSocket(this.socket);
         this.on('data:device_name', data=>{
             this.name = data['device_name'];
@@ -19,7 +21,7 @@ export class Device extends EventEmitter{
     }
 
     send(type: string, data: object): void {
-        this.socket.sendMessage({
+        this.jsonSocket.sendMessage({
             type: type,
             data: data
         });
@@ -28,7 +30,7 @@ export class Device extends EventEmitter{
     sendCommand(command: string, data: object): void {
         data = Object(data);
         data['command'] = command;
-        this.socket.sendMessage({
+        this.jsonSocket.sendMessage({
             type: 'command',
             data: data
         });
@@ -46,11 +48,13 @@ export class Device extends EventEmitter{
 
     private readFromSocket(socket){
         socket.on('message', message => {
+            console.log("message: ", message);
             this.emit('message', message);
             this.emit('data:' + message['type'], message['data']);
         });
         socket.on('close', ()=>{
             this.socket = null;
+            this.jsonSocket = null;
             this.emit('disconnect');
         });
     }
