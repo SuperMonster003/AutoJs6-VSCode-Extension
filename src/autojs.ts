@@ -3,21 +3,37 @@ import * as readline from 'readline';
 import {EventEmitter} from 'events';
 var JsonSocket = require('json-socket');
 
-export class Device extends EventEmitter{
+const HANDSHAKE_TIMEOUT = 10 * 1000;
+
+export class Device extends EventEmitter {
     public name: string;
     private socket: net.Socket;
     private jsonSocket;
+    private attached: boolean = false;
 
     constructor(socket:net.Socket){
         super();
         socket.setEncoding('utf-8');
         this.socket = socket;
         this.jsonSocket = new JsonSocket(socket);
-        this.readFromSocket(this.socket);
-        this.on('data:device_name', data=>{
+        this.readFromSocket(this.jsonSocket);
+        this.on('data:hello', data=>{
+            console.log("on client hello: ", data);
+            this.attached = true;
             this.name = data['device_name'];
-            console.log('device: ' + this);
+            this.send("hello", {
+                "server_version": 2
+            });
+            this.emit("attach", this);
         });
+        setTimeout(()=>{
+            if(!this.attached){
+                console.log("handshake timeout");
+                this.socket.destroy();
+                this.socket = null;
+                this.jsonSocket = null;
+            }
+        }, HANDSHAKE_TIMEOUT);
     }
 
     send(type: string, data: object): void {
@@ -72,8 +88,10 @@ export class AutoJs extends EventEmitter{
         this.port = port;
         this.server = net.createServer(socket=>{
             let device = new Device(socket);
-            this.attachDevice(device);
-            this.emit('new_device', device);
+            device.on("attach", (device)=>{
+                this.attachDevice(device);
+                this.emit('new_device', device);
+            });
         });
     }
 
