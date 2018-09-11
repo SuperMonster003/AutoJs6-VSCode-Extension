@@ -1,26 +1,37 @@
 import * as net from 'net';
 import * as readline from 'readline';
 import {EventEmitter} from 'events';
+var JsonSocket = require('json-socket');
 
 export class Device extends EventEmitter{
     public name: string;
-    private socket: net.Socket;
+    private socket;
 
     constructor(socket:net.Socket){
         super();
-        this.socket = socket;
         socket.setEncoding('utf-8');
-        this.readFromSocket(socket);
+        this.socket = new JsonSocket(socket);
+        this.readFromSocket(this.socket);
         this.on('data:device_name', data=>{
             this.name = data['device_name'];
             console.log('device: ' + this);
         });
     }
 
-    send(data: object): void {
-        let json = JSON.stringify(data);
-        this.socket.write(json);
-        this.socket.write('\n');
+    send(type: string, data: object): void {
+        this.socket.sendMessage({
+            type: type,
+            data: data
+        });
+    }
+
+    sendCommand(command: string, data: object): void {
+        data = Object(data);
+        data['command'] = command;
+        this.socket.sendMessage({
+            type: 'command',
+            data: data
+        });
     }
 
     public toString = () : string => {
@@ -33,12 +44,10 @@ export class Device extends EventEmitter{
         return `Device ${this.name}(${this.socket.remoteAddress}:${this.socket.remotePort})`;
     }
 
-    private readFromSocket(socket:net.Socket){
-        let rl = readline.createInterface(socket);
-        rl.on('line', line => {
-            let jsonObj = JSON.parse(line);
-            this.emit('data', jsonObj);
-            this.emit('data:' + jsonObj['type'], jsonObj);
+    private readFromSocket(socket){
+        socket.on('message', message => {
+            this.emit('message', message);
+            this.emit('data:' + message['type'], message['data']);
         });
         socket.on('close', ()=>{
             this.socket = null;
@@ -72,9 +81,15 @@ export class AutoJs extends EventEmitter{
         });
     }
 
-    send(data: object): void{
+    send(type: string, data: object): void{
         this.devices.forEach(device => {
-            device.send(data);
+            device.send(type, data);
+        });
+    }
+
+    sendCommand(command: string, data: object = {}): void{
+        this.devices.forEach(device => {
+            device.sendCommand(command, data);
         });
     }
 

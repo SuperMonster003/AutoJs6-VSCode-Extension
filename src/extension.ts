@@ -38,26 +38,19 @@ class Extension {
     }
 
     stop(){
-        server.send({
-            'type': 'command',
-            'view_id': vscode.window.activeTextEditor.document.fileName,
-            'command': 'stop',
+        server.sendCommand('stop', {
+            'id': vscode.window.activeTextEditor.document.fileName,
         })
     }
 
     stopAll(){
-        server.send({
-            'type': 'command',
-            'command': 'stopAll'
-        })
+        server.sendCommand('stopAll')
     }
 
     rerun(){
         let editor = vscode.window.activeTextEditor;
-        server.send({
-            'type': 'command',
-            'command': 'rerun',
-            'view_id': editor.document.fileName,
+        server.sendCommand('rerun', {
+            'id': editor.document.fileName,
             'name': editor.document.fileName,
             'script': editor.document.getText()
         });
@@ -88,10 +81,8 @@ class Extension {
 
     runOn(target: AutoJs | Device){
         let editor = vscode.window.activeTextEditor;
-        target.send({
-            'type': 'command',
-            'command': 'run',
-            'view_id': editor.document.fileName,
+        target.sendCommand('run', {
+            'id': editor.document.fileName,
             'name': editor.document.fileName,
             'script': editor.document.getText()
         })
@@ -107,10 +98,8 @@ class Extension {
 
     saveTo(target: AutoJs | Device){
         let editor = vscode.window.activeTextEditor;
-        target.send({
-            'command': 'save',
-            'type': 'command',
-            'view_id':  editor.document.fileName,
+        target.sendCommand('save', {
+            'id':  editor.document.fileName,
             'name':  editor.document.fileName,
             'script': editor.document.getText()
         })
