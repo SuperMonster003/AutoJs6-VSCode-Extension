@@ -23,7 +23,9 @@
     "main": "./out/extension",
     "contributes": {
         "breakpoints": [
-            { "language": "javascript" }
+            {
+                "language": "javascript"
+            }
         ],
         "commands": [
             {
