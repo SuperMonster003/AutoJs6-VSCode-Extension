@@ -1,115 +1,119 @@
 {
-    "name": "auto-js-vscodeext",
-    "displayName": "Auto.js-VSCodeExt",
-    "description": "Just a simple development plugin for Android app Auto.js",
-    "version": "0.1.0",
-    "publisher": "hyb1996",
-    "engines": {
-        "vscode": "^1.17.0"
-    },
-    "categories": [
-        "Other"
+  "name": "auto-js-vscodeext",
+  "displayName": "Auto.js-VSCodeExt",
+  "description": "Just a simple development plugin for Android app Auto.js",
+  "version": "0.1.1",
+  "publisher": "hyb1996",
+  "engines": {
+    "vscode": "^1.17.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:extension.startServer",
+    "onCommand:extension.stopServer",
+    "onCommand:extension.run",
+    "onCommand:extension.runOnDevice",
+    "onCommand:extension.stop",
+    "onCommand:extension.stopAll",
+    "onCommand:extension.save",
+    "onCommand:extension.saveToDevice"
+  ],
+  "main": "./out/extension",
+  "contributes": {
+    "breakpoints": [
+      {
+        "language": "javascript"
+      }
     ],
-    "activationEvents": [
-        "onCommand:extension.startServer",
-        "onCommand:extension.stopServer",
-        "onCommand:extension.run",
-        "onCommand:extension.runOnDevice",
-        "onCommand:extension.stop",
-        "onCommand:extension.stopAll",
-        "onCommand:extension.save",
-        "onCommand:extension.saveToDevice"
+    "commands": [
+      {
+        "command": "extension.startServer",
+        "title": "Auto.js: Start Server"
+      },
+      {
+        "command": "extension.stopServer",
+        "title": "Auto.js: Stop Server"
+      },
+      {
+        "command": "extension.run",
+        "title": "Auto.js: Run"
+      },
+      {
+        "command": "extension.runOnDevice",
+        "title": "Auto.js: Run On Device"
+      },
+      {
+        "command": "extension.stop",
+        "title": "Auto.js: Stop"
+      },
+      {
+        "command": "extension.stopAll",
+        "title": "Auto.js: Stop All"
+      },
+      {
+        "command": "extension.rerun",
+        "title": "Auto.js: Rerun"
+      },
+      {
+        "command": "extension.save",
+        "title": "Auto.js: Save"
+      },
+      {
+        "command": "extension.saveToDevice",
+        "title": "Auto.js: Save On Device"
+      }
     ],
-    "main": "./out/extension",
-    "contributes": {
-        "breakpoints": [
-            { "language": "javascript" }
-        ],
-        "commands": [
-            {
-                "command": "extension.startServer",
-                "title": "Auto.js: Start Server"
-            },
-            {
-                "command": "extension.stopServer",
-                "title": "Auto.js: Stop Server"
-            },
-            {
-                "command": "extension.run",
-                "title": "Auto.js: Run"
-            },
-            {
-                "command": "extension.runOnDevice",
-                "title": "Auto.js: Run On Device"
-            },
-            {
-                "command": "extension.stop",
-                "title": "Auto.js: Stop"
-            },
-            {
-                "command": "extension.stopAll",
-                "title": "Auto.js: Stop All"
-            },
-            {
-                "command": "extension.rerun",
-                "title": "Auto.js: Rerun"
-            },
-            {
-                "command": "extension.save",
-                "title": "Auto.js: Save"
-            },
-            {
-                "command": "extension.saveToDevice",
-                "title": "Auto.js: Save On Device"
-            }
-        ],
-        "keybindings": [
-            {
-                "command": "extension.run",
-                "key": "f5",
-                "mac": "f5",
-                "when": "editorTextFocus"
-            },
-            {
-                "command": "extension.stop",
-                "key": "shift+f5",
-                "mac": "shift+f5",
-                "when": "editorTextFocus"
-            },
-            {
-                "command": "extension.runOnDevice",
-                "key": "ctrl+f5",
-                "mac": "cmd+f5",
-                "when": "editorTextFocus"
-            },
-            {
-                "command": "extension.rerun",
-                "key": "ctrl+shift+f5",
-                "mac": "cmd+shift+f5",
-                "when": "editorTextFocus"
-            },
-            {
-                "command": "extension.save",
-                "key": "ctrl+shift+S",
-                "mac": "cmd+shift+S",
-                "when": "editorTextFocus"
-            }
-        ]
-    },
-    "scripts": {
-        "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./",
-        "watch": "tsc -watch -p ./",
-        "postinstall": "node ./node_modules/vscode/bin/install",
-        "test": "npm run compile && node ./node_modules/vscode/bin/test"
-    },
-    "devDependencies": {
-        "typescript": "^2.5.3",
-        "vscode": "^1.1.5",
-        "@types/node": "^7.0.43",
-        "@types/mocha": "^2.2.42"
-    },
-    "dependencies": {
-        "json-socket": "^0.3.0"
-    }
+    "keybindings": [
+      {
+        "command": "extension.run",
+        "key": "f5",
+        "mac": "f5",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.stop",
+        "key": "shift+f5",
+        "mac": "shift+f5",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.runOnDevice",
+        "key": "ctrl+f5",
+        "mac": "cmd+f5",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.rerun",
+        "key": "ctrl+shift+f5",
+        "mac": "cmd+shift+f5",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.save",
+        "key": "ctrl+shift+S",
+        "mac": "cmd+shift+S",
+        "when": "editorTextFocus"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "postinstall": "node ./node_modules/vscode/bin/install",
+    "test": "npm run compile && node ./node_modules/vscode/bin/test"
+  },
+  "devDependencies": {
+    "typescript": "^2.5.3",
+    "vscode": "^1.1.5",
+    "@types/node": "^7.0.43",
+    "@types/mocha": "^2.2.42"
+  },
+  "dependencies": {
+    "@types/websocket": "0.0.40",
+    "websocket": "1.0.26",
+    "json-socket": "^0.3.0"
+  }
 }
