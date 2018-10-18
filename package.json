@@ -2,7 +2,7 @@
   "name": "auto-js-vscodeext",
   "displayName": "Auto.js-VSCodeExt",
   "description": "Just a simple development plugin for Android app Auto.js",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "hyb1996",
   "engines": {
     "vscode": "^1.17.0"
