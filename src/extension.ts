@@ -2,9 +2,12 @@
 import * as vscode from 'vscode';
 import { AutoJsDebugServer, Device } from './autojs-debug';
 import * as oldAutojs from './autojs-debug-old';
+import { ProjectTemplate, Project } from './project';
+import { join } from 'path';
 
 var server = new AutoJsDebugServer(9317);
 var oldServer = new oldAutojs.AutoJsDebugServer(1209);
+var project: Project = null;
 
 var recentDevice = null;
 
@@ -153,8 +156,8 @@ class Extension {
             target.send({
                 'command': 'save',
                 'type': 'command',
-                'view_id':  editor.document.fileName,
-                'name':  editor.document.fileName,
+                'view_id': editor.document.fileName,
+                'name': editor.document.fileName,
                 'script': editor.document.getText()
             })
         } else {
@@ -165,10 +168,82 @@ class Extension {
             })
         }
     }
+
+    newProject() {
+        vscode.window.showOpenDialog({
+            'canSelectFiles': false,
+            'canSelectFolders': true,
+            'openLabel': '新建到这里'
+        }).then(uris => {
+            if (!uris || uris.length == 0) {
+                return;
+            }
+            return new ProjectTemplate(uris[0])
+                .build();
+        }).then(uri => {
+            vscode.commands.executeCommand("vscode.openFolder", uri);
+        });
+    }
+
+    runProject() {
+        let folders = vscode.workspace.workspaceFolders;
+        if(!folders || folders.length == 0){
+            vscode.window.showInformationMessage("请打开一个项目的文件夹");
+            return;
+        }
+        let folder = folders[0].uri;
+        if(project && project.folder != folder){
+            project = new Project(folder);
+        }
+        project.diff()
+            .then(result => {
+                server.sendBytes(result.buffer);
+                server.sendCommand("run", {
+                    'id': folder.toString(),
+                    'name': folder.toString(),
+                    'zip_md5': result.md5
+                });
+            });
+            
+    }
+
+    private getWorkspace() {
+        let folders = vscode.workspace.workspaceFolders;
+        if(!folders || folders.length == 0){
+            vscode.window.showInformationMessage("请打开一个项目的文件夹");
+            return null;
+        }
+        let folder = folders[0].uri;
+        if(project && project.folder != folder){
+            project = new Project(folder);
+        }
+        return {
+            project: project,
+            folder: folder
+        };
+    }
+
+    saveProject() {
+        let ws = this.getWorkspace();
+        if(ws == null){
+            return;
+        }
+        ws.project.zip()
+            .then(result => {
+                server.sendBytes(result.buffer);
+                server.sendCommand("save", {
+                    'id': ws.folder.toString(),
+                    'name': ws.folder.toString(),
+                    'zip_md5': result.md5
+                });
+            });
+            
+    }
 };
 
 
-const commands = ['startServer', 'stopServer', 'run', 'runOnDevice', 'stop', 'stopAll', 'rerun', 'save', 'saveToDevice'];
+const commands = ['startServer', 'stopServer', 'run', 'runOnDevice', 'stop', 'stopAll', 'rerun', 'save', 'saveToDevice', 'newProject',
+            'runProject', 'saveProject'];
 let extension = new Extension();
 
 export function activate(context: vscode.ExtensionContext) {

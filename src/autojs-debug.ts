@@ -3,6 +3,8 @@ import * as readline from 'readline';
 import { EventEmitter } from 'events';
 import * as ws from 'websocket';
 import * as http from 'http'
+import * as fs from 'fs'
+import * as jszip from 'jszip'
 
 const DEBUG = false;
 
@@ -47,6 +49,10 @@ export class Device extends EventEmitter {
             type: type,
             data: data
         }));
+    }
+
+    sendBytes(bytes: Buffer): void {
+
     }
 
     sendCommand(command: string, data: object): void {
@@ -136,6 +142,12 @@ export class AutoJsDebugServer extends EventEmitter {
     send(type: string, data: object): void {
         this.devices.forEach(device => {
             device.send(type, data);
+        });
+    }
+
+    sendBytes(data: Buffer): void {
+        this.devices.forEach(device => {
+            device.sendBytes(data);
         });
     }
 

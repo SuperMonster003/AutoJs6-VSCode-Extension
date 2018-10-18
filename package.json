@@ -18,7 +18,10 @@
     "onCommand:extension.stop",
     "onCommand:extension.stopAll",
     "onCommand:extension.save",
-    "onCommand:extension.saveToDevice"
+    "onCommand:extension.saveToDevice",
+    "onCommand:extension.newProject",
+    "onCommand:extension.runProject",
+    "onCommand:extension.saveProject"
   ],
   "main": "./out/extension",
   "contributes": {
@@ -63,6 +66,18 @@
       {
         "command": "extension.saveToDevice",
         "title": "Auto.js: Save On Device"
+      },
+      {
+        "command": "extension.newProject",
+        "title": "Auto.js: New Project"
+      },
+      {
+        "command": "extension.saveProject",
+        "title": "Auto.js: Save Project"
+      },
+      {
+        "command": "extension.runProject",
+        "title": "Auto.js: Run Project"
       }
     ],
     "keybindings": [
@@ -113,7 +128,9 @@
   },
   "dependencies": {
     "@types/websocket": "0.0.40",
-    "websocket": "1.0.26",
-    "json-socket": "^0.3.0"
-  }
+    "json-socket": "^0.3.0",
+    "jszip": "^3.1.5",
+    "websocket": "1.0.26"
+  },
+  "__npminstall_done": false
 }
