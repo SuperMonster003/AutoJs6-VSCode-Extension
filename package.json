@@ -2,8 +2,12 @@
   "name": "auto-js-vscodeext",
   "displayName": "Auto.js-VSCodeExt",
   "description": "Just a simple development plugin for Android app Auto.js",
-  "version": "0.1.2",
+  "version": "0.2.1",
   "publisher": "hyb1996",
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/hyb1996/Auto.js-VSCode-Extension"
+  },
   "engines": {
     "vscode": "^1.17.0"
   },
@@ -131,9 +135,8 @@
     "@types/jszip": "^3.1.4",
     "@types/stream-buffers": "^3.0.2",
     "@types/walk": "^2.3.0",
-    "@types/websocket": "0.0.40",
+    "@types/websocket": "^0.0.40",
     "archiver": "^3.0.0",
-    "json-socket": "^0.3.0",
     "jszip": "^3.1.5",
     "stream-buffers": "^3.0.2",
     "walk": "^2.3.14",

@@ -20,14 +20,15 @@ export class ProjectTemplate {
     build(): Thenable<Uri> {
         var projectConfig = new ProjectConfig();
         projectConfig.name = "新建项目";
+        projectConfig.main = "main.js";
         projectConfig.ignore = ["build"];
         projectConfig.packageName = "com.example";
-        projectConfig.versioName = "1.0.0";
+        projectConfig.versionName = "1.0.0";
         projectConfig.versionCode = 1;
         var uri = this.uri;
         var jsonFilePath = path.join(uri.fsPath, "project.json");
         var mainFilePath = path.join(uri.fsPath, "main.js");
-        var mainScript = "toast('Hello, Auto.js')";
+        var mainScript = "toast('Hello, Auto.js');";
         return projectConfig.save(jsonFilePath)
             .then(() => {
                 return new Promise<Uri>(function (res, rej) {
@@ -149,14 +150,15 @@ export class ProjectConfig {
     name: string;
     icon: string;
     packageName: String;
+    main: String;
     versionCode: number;
-    versioName: string;
+    versionName: string;
     ignore: string[];
     launchConfig: LaunchConfig;
 
     save(path: string) {
         return new Promise((res, rej) => {
-            var json = JSON.stringify(this);
+            var json = JSON.stringify(this, null, 4);
             fs.writeFile(path, json, function (err) {
                 if (err) {
                     rej(err);
