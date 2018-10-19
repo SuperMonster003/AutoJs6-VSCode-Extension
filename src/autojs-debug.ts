@@ -5,6 +5,7 @@ import * as ws from 'websocket';
 import * as http from 'http'
 import * as fs from 'fs'
 import * as jszip from 'jszip'
+import { Project, ProjectObserser } from './project';
 
 const DEBUG = false;
 
@@ -21,6 +22,7 @@ export class Device extends EventEmitter {
     public name: string;
     private connection: ws.connection;
     private attached: boolean = false;
+    public projectObserser: ProjectObserser;
 
     constructor(connection: ws.connection) {
         super();
@@ -52,7 +54,17 @@ export class Device extends EventEmitter {
     }
 
     sendBytes(bytes: Buffer): void {
+        this.connection.sendBytes(bytes);
+    }
 
+    sendBytesCommand(command: string, md5: string, data: object = {}): void {
+        data = Object(data);
+        data['command'] = command;
+        this.connection.sendUTF(JSON.stringify({
+            type: 'bytes_command',
+            md5: md5,
+            data: data
+        }));
     }
 
     sendCommand(command: string, data: object): void {
@@ -100,6 +112,13 @@ export class AutoJsDebugServer extends EventEmitter {
     private wsServer: ws.server;
     private port: number;
     public devices: Array<Device> = [];
+    public project: Project = null;
+    private fileFilter = (relativePath: string, absPath: string, stats: fs.Stats)=>{
+        if(!this.project){
+            return true;
+        }
+        return this.project.fileFilter(relativePath, absPath, stats);
+    };
 
     constructor(port: number) {
         super();
@@ -151,6 +170,28 @@ export class AutoJsDebugServer extends EventEmitter {
         });
     }
 
+    sendBytesCommand(command: string, md5: string, data: object = {}): void {
+        this.devices.forEach(device => {
+            device.sendBytesCommand(command, md5, data);
+        });
+    }
+
+    sendProjectCommand(folder:string, command: string) {
+        this.devices.forEach(device => {
+            if(device.projectObserser == null || device.projectObserser.folder != folder){
+                device.projectObserser = new ProjectObserser(folder, this.fileFilter);
+            }
+            device.projectObserser.diff()
+                .then(result => {
+                    device.sendBytes(result.buffer);
+                    device.sendBytesCommand(command, result.md5, {
+                        'id': folder,
+                        'name': folder
+                    });
+                });
+        });
+    }
+
     sendCommand(command: string, data: object = {}): void {
         this.devices.forEach(device => {
             device.sendCommand(command, data);
@@ -166,6 +207,7 @@ export class AutoJsDebugServer extends EventEmitter {
         this.devices.push(device);
         device.on('data:log', data => {
             console.log(data['log']);
+            this.emit('log', data['log']);
         });
         device.on('disconnect', this.detachDevice.bind(this, device));
     }

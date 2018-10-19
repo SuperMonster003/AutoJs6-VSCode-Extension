@@ -127,9 +127,16 @@
     "@types/mocha": "^2.2.42"
   },
   "dependencies": {
+    "@types/archiver": "^2.1.2",
+    "@types/jszip": "^3.1.4",
+    "@types/stream-buffers": "^3.0.2",
+    "@types/walk": "^2.3.0",
     "@types/websocket": "0.0.40",
+    "archiver": "^3.0.0",
     "json-socket": "^0.3.0",
     "jszip": "^3.1.5",
+    "stream-buffers": "^3.0.2",
+    "walk": "^2.3.14",
     "websocket": "1.0.26"
   },
   "__npminstall_done": false

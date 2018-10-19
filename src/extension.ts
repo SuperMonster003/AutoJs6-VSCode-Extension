@@ -7,7 +7,6 @@ import { join } from 'path';
 
 var server = new AutoJsDebugServer(9317);
 var oldServer = new oldAutojs.AutoJsDebugServer(1209);
-var project: Project = null;
 
 var recentDevice = null;
 
@@ -25,6 +24,8 @@ server
         };
         setTimeout(showMessage, 1000);
         device.on('data:device_name', showMessage);
+    })
+    .on('log', log => {
     });
 
 oldServer
@@ -186,58 +187,24 @@ class Extension {
     }
 
     runProject() {
-        let folders = vscode.workspace.workspaceFolders;
-        if(!folders || folders.length == 0){
-            vscode.window.showInformationMessage("请打开一个项目的文件夹");
-            return;
-        }
-        let folder = folders[0].uri;
-        if(project && project.folder != folder){
-            project = new Project(folder);
-        }
-        project.diff()
-            .then(result => {
-                server.sendBytes(result.buffer);
-                server.sendCommand("run", {
-                    'id': folder.toString(),
-                    'name': folder.toString(),
-                    'zip_md5': result.md5
-                });
-            });
-            
+       this.sendProjectCommand("run_project");
     }
 
-    private getWorkspace() {
+    sendProjectCommand(command: string) {
         let folders = vscode.workspace.workspaceFolders;
         if(!folders || folders.length == 0){
             vscode.window.showInformationMessage("请打开一个项目的文件夹");
             return null;
         }
         let folder = folders[0].uri;
-        if(project && project.folder != folder){
-            project = new Project(folder);
+        if(!server.project || server.project.folder != folder){
+            server.project && server.project.dispose();
+            server.project = new Project(folder);
         }
-        return {
-            project: project,
-            folder: folder
-        };
+        server.sendProjectCommand(folder.fsPath, command);
     }
-
     saveProject() {
-        let ws = this.getWorkspace();
-        if(ws == null){
-            return;
-        }
-        ws.project.zip()
-            .then(result => {
-                server.sendBytes(result.buffer);
-                server.sendCommand("save", {
-                    'id': ws.folder.toString(),
-                    'name': ws.folder.toString(),
-                    'zip_md5': result.md5
-                });
-            });
-            
+        this.sendProjectCommand("save_project");
     }
 };
 
