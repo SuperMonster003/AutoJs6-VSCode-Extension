@@ -1,6 +1,8 @@
 out
 node_modules
 .vscode-test/
-.vsix
+.idea
+*.vsix
 
 token.txt
+package-lock.json

@@ -7,7 +7,7 @@
             "es6",
             "dom",
             "es2015",
-            "es5",
+            "es5"
         ],
         "sourceMap": true,
         "rootDir": "src"

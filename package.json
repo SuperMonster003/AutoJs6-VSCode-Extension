@@ -1,12 +1,13 @@
 {
-  "name": "auto-js-vscodeext",
-  "displayName": "Auto.js-VSCodeExt",
-  "description": "Just a simple development plugin for Android app Auto.js",
-  "version": "0.2.1",
-  "publisher": "hyb1996",
+  "name": "autojs6-vscode-ext",
+  "displayName": "AutoJs6 VSCode Ext",
+  "description": "Development plugin for AutoJs6",
+  "version": "1.0.0",
+  "publisher": "003",
+  "icon": "assets/images/icon_autojs_logo.png",
   "repository": {
     "type": "github",
-    "url": "https://github.com/hyb1996/Auto.js-VSCode-Extension"
+    "url": "https://github.com/SuperMonster003/AutoJs6-VSCode-Extension"
   },
   "engines": {
     "vscode": "^1.17.0"
@@ -36,83 +37,106 @@
     ],
     "commands": [
       {
+        "command": "extension.viewDocument",
+        "title": "查看在线文档 (View Online Document)",
+        "category": "AutoJs6"
+      },
+      {
         "command": "extension.startServer",
-        "title": "Auto.js: Start Server"
+        "title": "启动服务 (Start Server)",
+        "category": "AutoJs6"
       },
       {
         "command": "extension.stopServer",
-        "title": "Auto.js: Stop Server"
+        "title": "停止服务 (Stop Server)",
+        "category": "AutoJs6"
       },
       {
         "command": "extension.run",
-        "title": "Auto.js: Run"
+        "title": "运行脚本 (Run)",
+        "category": "AutoJs6"
       },
       {
         "command": "extension.runOnDevice",
-        "title": "Auto.js: Run On Device"
+        "title": "指定设备运行 (Run On Device)",
+        "category": "AutoJs6"
       },
       {
         "command": "extension.stop",
-        "title": "Auto.js: Stop"
+        "title": "停止当前脚本 (Stop)",
+        "category": "AutoJs6"
       },
       {
         "command": "extension.stopAll",
-        "title": "Auto.js: Stop All"
+        "title": "停止所有脚本 (Stop All)",
+        "category": "AutoJs6"
       },
       {
         "command": "extension.rerun",
-        "title": "Auto.js: Rerun"
+        "title": "重新运行脚本 (Rerun)",
+        "category": "AutoJs6"
       },
       {
         "command": "extension.save",
-        "title": "Auto.js: Save"
+        "title": "保存到所有设备 (Save)",
+        "category": "AutoJs6"
       },
       {
         "command": "extension.saveToDevice",
-        "title": "Auto.js: Save On Device"
+        "title": "保存到指定设备 (Save On Device)",
+        "category": "AutoJs6"
       },
       {
         "command": "extension.newProject",
-        "title": "Auto.js: New Project"
+        "title": "新建项目 (New Project)",
+        "category": "AutoJs6"
       },
       {
         "command": "extension.saveProject",
-        "title": "Auto.js: Save Project"
+        "title": "保存项目到设备 (Save Project)",
+        "category": "AutoJs6"
       },
       {
         "command": "extension.runProject",
-        "title": "Auto.js: Run Project"
+        "title": "运行项目 (Run Project)",
+        "category": "AutoJs6"
       }
     ],
     "keybindings": [
       {
+        "command": "extension.viewDocument",
+        "key": "alt+shift+f6",
+        "mac": "cmd+shift+f6",
+        "when": "editorTextFocus"
+      },
+      {
         "command": "extension.run",
-        "key": "f5",
-        "mac": "f5",
+        "key": "f6",
+        "mac": "f6",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.stopAll",
+        "key": "ctrl+shift+f6",
+        "mac": "ctrl+shift+f6",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.startServer",
+        "key": "ctrl+alt+f6",
+        "mac": "ctrl+cmd+f6",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.stopServer",
+        "key": "ctrl+alt+shift+f6",
+        "mac": "ctrl+cmd+shift+f6",
         "when": "editorTextFocus"
       },
       {
         "command": "extension.stop",
-        "key": "shift+f5",
-        "mac": "shift+f5",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "extension.runOnDevice",
-        "key": "ctrl+f5",
-        "mac": "cmd+f5",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "extension.rerun",
-        "key": "ctrl+shift+f5",
-        "mac": "cmd+shift+f5",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "extension.save",
-        "key": "ctrl+shift+S",
-        "mac": "cmd+shift+S",
+        "key": "ctrl+f6",
+        "mac": "ctrl+f6",
         "when": "editorTextFocus"
       }
     ]
@@ -121,18 +145,18 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "postinstall": "node ./node_modules/vscode/bin/install",
-    "test": "npm run compile && node ./node_modules/vscode/bin/test"
+    "package": "vsce package",
+    "publish": "vsce publish"
   },
   "devDependencies": {
-    "typescript": "^2.5.3",
-    "vscode": "^1.1.5",
-    "@types/node": "^7.0.43",
-    "@types/mocha": "^2.2.42"
+    "typescript": "^4.5.2",
+    "@types/node": "^12.20.37",
+    "@types/mocha": "^2.2.42",
+    "@types/vscode": "^1.1.37",
+    "@vscode/test-electron": "^1.6.2"
   },
   "dependencies": {
     "@types/archiver": "^2.1.2",
-    "@types/jszip": "^3.1.4",
     "@types/stream-buffers": "^3.0.2",
     "@types/walk": "^2.3.0",
     "@types/websocket": "^0.0.40",

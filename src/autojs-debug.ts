@@ -1,45 +1,37 @@
-import * as net from 'net';
-import * as readline from 'readline';
-import { EventEmitter } from 'events';
+import {EventEmitter} from 'events';
+import {Project, ProjectObserver} from './project';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as http from 'http';
 import * as ws from 'websocket';
-import * as http from 'http'
-import * as fs from 'fs'
-import * as jszip from 'jszip'
-import { Project, ProjectObserser } from './project';
+import * as vscode from 'vscode';
 
 const DEBUG = false;
-
-function logDebug(message?: any, ...optionalParams: any[]){
-    if(DEBUG){
-        console.log.apply(console, arguments);
-    }
-}
-
 
 const HANDSHAKE_TIMEOUT = 10 * 1000;
 
 export class Device extends EventEmitter {
-    public name: string;
+    public name: string = '';
     private connection: ws.connection;
     private attached: boolean = false;
-    public projectObserser: ProjectObserser;
+    public projectObserver: ProjectObserver;
 
     constructor(connection: ws.connection) {
         super();
         this.connection = connection;
         this.read(this.connection);
         this.on('data:hello', data => {
-            logDebug("on client hello: ", data);
+            logDebug('on client hello: ', data);
             this.attached = true;
-            this.name = data['device_name'];
-            this.send("hello", {
-                "server_version": 2
+            this.name = data['device_name'] || '';
+            this.send('hello', {
+                'server_version': 2,
             });
-            this.emit("attach", this);
+            this.emit('attach', this);
         });
         setTimeout(() => {
             if (!this.attached) {
-                console.log("handshake timeout");
+                console.log('handshake timeout');
                 this.connection.close();
                 this.connection = null;
             }
@@ -49,7 +41,7 @@ export class Device extends EventEmitter {
     send(type: string, data: object): void {
         this.connection.sendUTF(JSON.stringify({
             type: type,
-            data: data
+            data: data,
         }));
     }
 
@@ -63,7 +55,7 @@ export class Device extends EventEmitter {
         this.connection.sendUTF(JSON.stringify({
             type: 'bytes_command',
             md5: md5,
-            data: data
+            data: data,
         }));
     }
 
@@ -74,22 +66,16 @@ export class Device extends EventEmitter {
     }
 
     public toString = (): string => {
-        if (!this.connection) {
-            return `${this.name}[Disconnected]`
-        }
-        if (!this.name) {
-            return `Device (${this.connection.remoteAddress})`;
-        }
-        return `Device ${this.name}(${this.connection.remoteAddress})`;
-    }
+        return `${this.name || 'Unknown device name'} (${this.connection.remoteAddress})`;
+    };
 
     private read(connection: ws.connection) {
         connection.on('message', message => {
-            logDebug("message: ", message);
+            logDebug('message: ', message);
             if (message.type == 'utf8') {
                 try {
                     let json = JSON.parse(message.utf8Data);
-                    logDebug("json: ", json);
+                    logDebug('json: ', json);
                     this.emit('message', json);
                     this.emit('data:' + json['type'], json['data']);
                 } catch (e) {
@@ -108,13 +94,14 @@ export class Device extends EventEmitter {
 
 export class AutoJsDebugServer extends EventEmitter {
 
-    private httpServer: http.Server;
-    private wsServer: ws.server;
-    private port: number;
+    private readonly httpServer: http.Server;
+    public ip: string;
+    public port: number;
     public devices: Array<Device> = [];
     public project: Project = null;
-    private fileFilter = (relativePath: string, absPath: string, stats: fs.Stats)=>{
-        if(!this.project){
+    private logChannels: Map<string, vscode.OutputChannel>;
+    private fileFilter = (relativePath: string, absPath: string, stats: fs.Stats) => {
+        if (!this.project) {
             return true;
         }
         return this.project.fileFilter(relativePath, absPath, stats);
@@ -122,24 +109,29 @@ export class AutoJsDebugServer extends EventEmitter {
 
     constructor(port: number) {
         super();
+        this.logChannels = new Map<string, vscode.OutputChannel>();
+        this.ip = this.getIp();
         this.port = port;
         this.httpServer = http.createServer(function (request, response) {
             console.log(new Date() + ' Received request for ' + request.url);
             response.writeHead(404);
             response.end();
         });
-        var wsServer = new ws.server({ httpServer: this.httpServer });
-        wsServer.on('request', request => {
+        const wsServer = new ws.server({httpServer: this.httpServer});
+        wsServer.on('request', (request) => {
             logDebug('request: ', request);
             let connection = this.openConnection(request);
-            if (!connection) {
-                return;
+            if (connection) {
+                let device = new Device(connection);
+                device.on('attach', (device) => {
+                    this.attachDevice(device);
+                    this.emit('new_device', device);
+
+                    // @Reference to 710850609
+                    let logChannel = this.newLogChannel(device);
+                    logChannel.appendLine(`设备已连接: ${device}`);
+                });
             }
-            let device = new Device(connection);
-            device.on("attach", (device) => {
-                this.attachDevice(device);
-                this.emit('new_device', device);
-            });
         });
     }
 
@@ -153,42 +145,39 @@ export class AutoJsDebugServer extends EventEmitter {
         });
         this.httpServer.listen(this.port, '0.0.0.0', () => {
             let address = this.httpServer.address();
-            console.log(`server listening on ${address.address}':${address.port}`);
-            this.emit("connect");
+            if (typeof address === 'object') {
+                console.log(`server listening on ${address.address}':${address.port}`);
+            } else if (typeof address === 'string') {
+                console.log(`server listening on ${address}`);
+            }
+            this.emit('connect');
         });
     }
 
     send(type: string, data: object): void {
-        this.devices.forEach(device => {
-            device.send(type, data);
-        });
+        this.devices.forEach(device => device.send(type, data));
     }
 
     sendBytes(data: Buffer): void {
-        this.devices.forEach(device => {
-            device.sendBytes(data);
-        });
+        this.devices.forEach(device => device.sendBytes(data));
     }
 
     sendBytesCommand(command: string, md5: string, data: object = {}): void {
-        this.devices.forEach(device => {
-            device.sendBytesCommand(command, md5, data);
-        });
+        this.devices.forEach(device => device.sendBytesCommand(command, md5, data));
     }
 
-    sendProjectCommand(folder:string, command: string) {
+    sendProjectCommand(folder: string, command: string) {
         this.devices.forEach(device => {
-            if(device.projectObserser == null || device.projectObserser.folder != folder){
-                device.projectObserser = new ProjectObserser(folder, this.fileFilter);
+            if (device.projectObserver == null || device.projectObserver.folder != folder) {
+                device.projectObserver = new ProjectObserver(folder, this.fileFilter);
             }
-            device.projectObserser.diff()
-                .then(result => {
-                    device.sendBytes(result.buffer);
-                    device.sendBytesCommand(command, result.md5, {
-                        'id': folder,
-                        'name': folder
-                    });
+            device.projectObserver.diff().then((result) => {
+                device.sendBytes(result.buffer);
+                device.sendBytesCommand(command, result.md5, {
+                    'id': folder,
+                    'name': folder,
                 });
+            });
         });
     }
 
@@ -200,13 +189,15 @@ export class AutoJsDebugServer extends EventEmitter {
 
     disconnect(): void {
         this.httpServer.close();
-        this.emit("disconnect");
+        this.emit('disconnect');
+        this.logChannels.forEach(channel => channel.dispose());
+        this.logChannels.clear();
     }
 
     private attachDevice(device: Device): void {
         this.devices.push(device);
-        device.on('data:log', data => {
-            console.log(data['log']);
+        device.on('data:log', (data) => {
+            this.getLogChannel(device).appendLine(data['log']);
             this.emit('log', data['log']);
         });
         device.on('disconnect', this.detachDevice.bind(this, device));
@@ -214,7 +205,44 @@ export class AutoJsDebugServer extends EventEmitter {
 
     private detachDevice(device: Device): void {
         this.devices.splice(this.devices.indexOf(device), 1);
-        console.log("detachDevice: " + device);
+        console.log('detachDevice: ' + device);
+        this.getLogChannel(device).appendLine(`设备已断开: ${device}`);
     }
 
+    // @Reference to 710850609
+    private newLogChannel(device: Device): vscode.OutputChannel {
+        let channelName = `${device}`;
+        let logChannel = this.logChannels.get(channelName);
+        if (!logChannel) {
+            logChannel = vscode.window.createOutputChannel(channelName);
+            this.logChannels.set(channelName, logChannel);
+        }
+        logChannel.show(true);
+        return logChannel;
+    }
+
+    // @Reference to 710850609
+    private getLogChannel(device: Device): vscode.OutputChannel {
+        let channelName = `${device}`;
+        return this.logChannels.get(channelName);
+    }
+
+    // @Reference to 710850609
+    public getIp(): string {
+        let interfaces = os.networkInterfaces();
+        for (let nic in interfaces) {
+            let infos = interfaces[nic];
+            for (let info of infos) {
+                if (info.family === 'IPv4' && info.address !== '127.0.0.1' && !info.internal) {
+                    return info.address;
+                }
+            }
+        }
+    }
+}
+
+function logDebug(message?: any, ...optionalParams: any[]) {
+    if (DEBUG) {
+        console.log.apply(console, arguments);
+    }
 }
