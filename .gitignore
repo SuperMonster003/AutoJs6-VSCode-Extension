@@ -1,8 +1,11 @@
-out
-node_modules
-.vscode-test/
-.idea
-*.vsix
+/out
+/node_modules
+/.git
+/.vscode
+/.vscode-test
+/.idea
 
+*.vsix
+*.bak
 token.txt
 package-lock.json
