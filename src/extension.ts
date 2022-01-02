@@ -70,7 +70,7 @@ export class Extension {
                 return globalState.keys();
             },
             get(key: string): string[] {
-                return (globalState.get(key) as string[]).map(attach);
+                return (globalState.get(key, []) as string[]).map(attach);
             },
             update(key: string, addresses: string[]): Thenable<void> {
                 let deduped = Array.from(new Set(addresses.map(detach)));
@@ -494,7 +494,7 @@ export class Extension {
 
 // noinspection JSUnusedGlobalSymbols
 export function activate(context: vscode.ExtensionContext) {
-    logDebug('extension "AutoJs6 VSCode Ext" is activating');
+    logDebug('extension "AutoJs6 VSCode Extension" is activating');
 
     let instance = new Extension();
 
@@ -507,7 +507,7 @@ export function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(vscode.commands.registerCommand('extension.' + command, action));
     });
 
-    logDebug('extension "AutoJs6 VSCode Ext" is now active');
+    logDebug('extension "AutoJs6 VSCode Extension" is now active');
 
     // noinspection JSUnusedGlobalSymbols
     this.deactivate = () => instance.disconnectAll();

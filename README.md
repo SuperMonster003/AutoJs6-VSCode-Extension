@@ -1,3 +1,25 @@
+<!--suppress HtmlDeprecatedAttribute -->
+
+<div align="center">
+  <p>
+    <img alt="autojs6-vscode-ext-banner" src="https://github.com/SuperMonster002/Hello-Sockpuppet/raw/master/autojs6-vscode-ext-banner_1024×310.png" width="512"/>
+  </p>
+
+  <p>AutoJs6 (Auto.js v6.x) 调试工具 (VSCode 插件)</p>
+  <p>Debugger for AutoJs6 (Auto.js v6.x) on VSCode</p>
+
+  <p>
+    <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/issues"><img alt="GitHub closed issues" src="https://img.shields.io/github/issues/SuperMonster003/AutoJs6-VSCode-Extension?color=009688"/></a>
+    <a href="https://github.com/SuperMonster003/AutoJs6"><img alt="GitHub AutoJs6 repository" src="https://img.shields.io/badge/auto.js->= 6.0.1-67a91b"/></a>
+    <a href="https://github.com/topics/javascript"><img alt="GitHub top language" src="https://img.shields.io/github/languages/top/SuperMonster003/AutoJs6-VSCode-Extension?color=eb8031"/></a>
+    <br>
+    <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/commit/d43a0119b214a17062501ea8a938b13bd97d2028"><img alt="Created" src="https://img.shields.io/date/1638929280?color=2e7d32&label=created"/></a>
+    <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/find/master"><img alt="GitHub Code Size" src="https://img.shields.io/github/languages/code-size/SuperMonster003/AutoJs6-VSCode-Extension?color=795548"/></a>
+    <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/find/master"><img alt="GitHub Code Lines" src="https://img.shields.io/tokei/lines/github/SuperMonster003/AutoJs6-VSCode-Extension?color=37474F"/></a>
+    <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/blob/master/LICENSE"><img alt="GitHub License" src="https://img.shields.io/github/license/SuperMonster003/AutoJs6-VSCode-Extension?color=534BAE"/></a>
+  </p>
+</div>
+
 ******
 
 ### AutoJs6 VSCode 开发插件
@@ -15,7 +37,7 @@
 
 - VSCode 菜单 `View / 查看` - `Extensions / 扩展` `[ Ctrl+Shift+X ]`
 - 搜索 "AutoJs6" 或 "003"
-- 选择 "AutoJs6 VSCode Ext" 插件并安装 (或更新)
+- 选择 "AutoJs6 VSCode Extension" 插件并安装 (或更新)
 
 ******
 
@@ -126,6 +148,12 @@
 ### 版本历史 (Release Notes)
 
 ******
+
+# v1.0.2
+
+###### 2022/01/02
+
+* `修复` VSCode 无设备连接历史时无法建立连接的问题
 
 # v1.0.1
 
