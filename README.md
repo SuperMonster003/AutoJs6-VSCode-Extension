@@ -10,7 +10,7 @@
 
   <p>
     <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/issues"><img alt="GitHub closed issues" src="https://img.shields.io/github/issues/SuperMonster003/AutoJs6-VSCode-Extension?color=009688"/></a>
-    <a href="https://github.com/SuperMonster003/AutoJs6"><img alt="GitHub AutoJs6 repository" src="https://img.shields.io/badge/auto.js->= 6.0.1-67a91b"/></a>
+    <a href="https://github.com/SuperMonster003/AutoJs6"><img alt="GitHub AutoJs6 repository" src="https://img.shields.io/badge/auto.js->= 6.0.2-67a91b"/></a>
     <a href="https://github.com/topics/javascript"><img alt="GitHub top language" src="https://img.shields.io/github/languages/top/SuperMonster003/AutoJs6-VSCode-Extension?color=eb8031"/></a>
     <br>
     <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/commit/d43a0119b214a17062501ea8a938b13bd97d2028"><img alt="Created" src="https://img.shields.io/date/1638929280?color=2e7d32&label=created"/></a>
@@ -149,6 +149,12 @@
 
 ******
 
+# v1.0.3
+
+###### 2022/01/05
+
+* `修复` VSCode 焦点位于输出面板 (OUTPUT) 时无法运行脚本的问题
+
 # v1.0.2
 
 ###### 2022/01/02
@@ -161,11 +167,9 @@
 
 * `新增` 支持客户端 (LAN) 及服务端 (LAN/ADB) 连接方式 (Ref to Auto.js Pro)
 
-# v1.0.0
+##### 更多版本历史可参阅
 
-###### 2021/12/07
-
-* `优化` 在 VSCode 的 OUTPUT (输出) 面板显示实时日志 (Ref to 710850609)
+* [CHANGELOG.md](https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/blob/master/assets/docs/CHANGELOG.md)
 
 ******
 
@@ -175,13 +179,13 @@
 
 * [AutoJs6](https://github.com/SuperMonster003/AutoJs6) { author: [SuperMonster003](https://github.com/SuperMonster003)
   }
-    - `安卓平台 JavaScript 自动化工具`
+    - `安卓平台 JavaScript 自动化工具 (二次开发项目)`
 * [Auto.js-VSCode-Extension](https://github.com/hyb1996/Auto.js-VSCode-Extension) {
   author: [hyb1996](https://github.com/hyb1996) }
     - `Auto.js VSCode 开发插件`
 * [Auto.js-VSCode-Extension](https://github.com/710850609/Auto.js-VSCode-Extension) {
   author: [710850609](https://github.com/710850609) }
-    - `Auto.js VSCode 开发插件`
+    - `Auto.js VSCode 开发插件 (二次开发项目)`
 * [Auto.js-VSCode-Extension](https://github.com/kkevsekk1/Auto.js-VSCode-Extension) {
   author: [kkevsekk1](https://github.com/kkevsekk1) }
-    - `Auto.js VSCode 开发插件`
+    - `Auto.js VSCode 开发插件 (二次开发项目)`
