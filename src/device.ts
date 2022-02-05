@@ -1,12 +1,11 @@
 import * as net from 'net';
+import {Server, Socket} from 'net';
 import * as events from 'events';
-import * as project from './project';
 import * as zlib from 'zlib';
 import * as vscode from 'vscode';
-
-import {logDebug} from './util';
-import {Server, Socket} from 'net';
+import * as project from './project';
 import {Project, ProjectObserver} from './project';
+import {logDebug} from './util';
 
 const HEADER_SIZE = 8;
 const TYPE_TEXT = 1;
@@ -39,6 +38,7 @@ export class Device extends events.EventEmitter {
 
     constructor(connection: Socket) {
         super();
+
         this.id = 1;
         this.versionCode = 0;
         this.protocolVersion = 0;
@@ -53,7 +53,6 @@ export class Device extends events.EventEmitter {
             this.name = data['device_name'] || 'unknown device';
             this.version = data['app_version'];
             this.versionCode = data['app_version_code'];
-
             this.protocolVersion = data['server_version'];
             this.deviceId = data['device_id'];
 
@@ -180,35 +179,71 @@ export class Device extends events.EventEmitter {
     read(socket: Socket) {
         logDebug('## Device.read');
 
+        let DEFAULT_DATA_LENGTH = -1;
+        let DEFAULT_DATA_TYPE = -1;
+
+        let _ = {
+            isLastDataComplete: true,
+            jointData: <Buffer>Buffer.allocUnsafe(0),
+            parsedDataLength: DEFAULT_DATA_LENGTH,
+            parsedDataType: DEFAULT_DATA_TYPE,
+            onData(chunk: Buffer, parser: (dataType: number, data: Buffer) => void) {
+                let offset = 0;
+                let expectedChunkLen = ( /* @IIFE */ () => {
+                    if (this.isLastDataComplete) {
+                        this.parseHeader(chunk);
+                        offset += HEADER_SIZE;
+                        return HEADER_SIZE + this.parsedDataLength;
+                    }
+                    return this.parsedDataLength - this.getJointDataLength();
+                })();
+
+                this.joinData(chunk.slice(offset, expectedChunkLen));
+
+                if (chunk.length >= expectedChunkLen) {
+                    this.isLastDataComplete = true;
+                    this.parseFullData(parser);
+                    this.reset();
+
+                    if (chunk.length > expectedChunkLen) {
+                        let remaining = chunk.slice(expectedChunkLen);
+                        logDebug(`remaining len: ${remaining.length}`);
+                        this.onData(remaining, parser);
+                    }
+                } else {
+                    this.isLastDataComplete = false;
+                }
+            },
+            getJointDataLength() {
+                return this.jointData.length;
+            },
+            joinData(data: Buffer): void {
+                logDebug(`length of data to be joint: ${data.length}`);
+                this.jointData = Buffer.concat([this.jointData, data]);
+            },
+            parseHeader(chunk: Buffer) {
+                this.parsedDataLength = chunk.readInt32BE(0);
+                this.parsedDataType = chunk.readInt32BE(4);
+                logDebug(`dataLength: ${this.parsedDataLength}, dataType: ${this.parsedDataType}`);
+            },
+            parseFullData(parser: (dataType: number, data: Buffer) => void) {
+                logDebug(`parsing full data... (len: ${this.jointData.length})`);
+                parser(this.parsedDataType, this.jointData);
+            },
+            reset() {
+                this.jointData = <Buffer>Buffer.allocUnsafe(0);
+                this.parsedDataLength = DEFAULT_DATA_LENGTH;
+                this.parsedDataType = DEFAULT_DATA_TYPE;
+            },
+        };
+
         socket
             .on('data', (chunk: Buffer) => {
-                let dataLength = null;
-                let dataType = 0;
-                let unified = Buffer.allocUnsafe(0);
-
                 logDebug('on data');
-
-                unified = Buffer.concat([unified, chunk]);
-
-                while (unified.length >= HEADER_SIZE) {
-                    dataLength = unified.readInt32BE(0);
-                    dataType = unified.readInt32BE(4);
-                    logDebug(`dataLength: ${dataLength}, dataType: ${dataType}`);
-
-                    if (dataLength !== null) {
-                        if (unified.length < dataLength + HEADER_SIZE) {
-                            break;
-                        }
-                        let data = unified.slice(HEADER_SIZE, dataLength + HEADER_SIZE);
-                        unified = unified.slice(dataLength + HEADER_SIZE);
-                        this.onData(dataType, data);
-                        dataLength = null;
-                    }
-                }
+                _.onData(chunk, this.onData.bind(this));
             })
-            .on('message', message => {
+            .on('message', (message) => {
                 logDebug('on message');
-
                 logDebug('message: ', message);
                 if (message.type == 'utf8') {
                     try {
@@ -223,7 +258,6 @@ export class Device extends events.EventEmitter {
             })
             .on('close', (had_error, description) => {
                 logDebug('on close');
-
                 logDebug(`closed: {device: ${this}, had_error: ${had_error}, desc: ${description}}`);
                 this.connection = null;
                 this.emit('disconnect');
@@ -232,7 +266,6 @@ export class Device extends events.EventEmitter {
 
     onData(dataType, data) {
         logDebug('## Device.onData');
-
         logDebug(`onData: type = ${dataType}, length = ${data.length}, content = ${data}`);
 
         if (dataType == TYPE_TEXT) {
@@ -257,7 +290,6 @@ export class Device extends events.EventEmitter {
 
     handleJsonData(data: Buffer) {
         logDebug('## Device.handleJsonData');
-
         logDebug('## json data buffer length: ' + data.length);
 
         try {
@@ -375,15 +407,12 @@ export class Devices extends events.EventEmitter {
     sendProjectCommand(folder, command) {
         logDebug('## Devices.sendProjectCommand');
 
-        if (this.devices.length === 0) {
-            return false;
-        }
-        this.devices.forEach(device => {
+        this.devices.forEach((device) => {
             if (device.projectObserver == null || device.projectObserver.folder != folder) {
                 device.projectObserver = new project.ProjectObserver(folder, this.fileFilter);
             }
             device.projectObserver.diff()
-                .then(result => {
+                .then((result) => {
                     device.sendBytes(result.buffer);
                     device.sendBytesCommand(command, result.md5, {
                         'id': folder,
@@ -393,7 +422,7 @@ export class Devices extends events.EventEmitter {
                     });
                 });
         });
-        return true;
+        return this.devices.length > 0;
     }
 
     sendCommand(command, data = {}) {
@@ -405,10 +434,8 @@ export class Devices extends events.EventEmitter {
     disconnect() {
         logDebug('## Devices.disconnect');
 
-        this.devices.forEach(device => {
-            device.disconnect();
-        });
-        this.devices = [];
+        this.devices.forEach(dev => dev.disconnect());
+        this.devices.splice(0);
         this.recentDevice = null;
     }
 
@@ -426,7 +453,6 @@ export class Devices extends events.EventEmitter {
 
     attachDevice(device: Device) {
         logDebug('## Devices.attachDevice');
-
         logDebug('attaching device: ' + device);
 
         this.devices.push(device);
@@ -448,7 +474,7 @@ export class Devices extends events.EventEmitter {
         logDebug('## Devices.detachDevice');
 
         this.devices.splice(this.devices.indexOf(device), 1);
-        if (device === this.recentDevice) {
+        if (this.recentDevice === device) {
             this.recentDevice = null;
         }
         logDebug('detachDevice: ' + device);

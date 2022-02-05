@@ -149,6 +149,13 @@
 
 ******
 
+# v1.0.4
+
+###### 2022/02/05
+
+* `修复` 当 AutoJs6 单次生成日志长度较大时无法正常拼接的问题  _[`issue #4`](https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/issues/4)_
+* `修复` 新设备建立连接后焦点自动转移至输出面板 (OUTPUT) 的问题
+
 # v1.0.3
 
 ###### 2022/01/05
@@ -161,12 +168,6 @@
 
 * `修复` VSCode 无设备连接历史时无法建立连接的问题
 
-# v1.0.1
-
-###### 2022/01/01
-
-* `新增` 支持客户端 (LAN) 及服务端 (LAN/ADB) 连接方式 (Ref to Auto.js Pro)
-
 ##### 更多版本历史可参阅
 
 * [CHANGELOG.md](https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/blob/master/assets/docs/CHANGELOG.md)
@@ -177,15 +178,11 @@
 
 ******
 
-* [AutoJs6](https://github.com/SuperMonster003/AutoJs6) { author: [SuperMonster003](https://github.com/SuperMonster003)
-  }
+* [AutoJs6](https://github.com/SuperMonster003/AutoJs6) { author: [SuperMonster003](https://github.com/SuperMonster003) }
     - `安卓平台 JavaScript 自动化工具 (二次开发项目)`
-* [Auto.js-VSCode-Extension](https://github.com/hyb1996/Auto.js-VSCode-Extension) {
-  author: [hyb1996](https://github.com/hyb1996) }
+* [Auto.js-VSCode-Extension](https://github.com/hyb1996/Auto.js-VSCode-Extension) { author: [hyb1996](https://github.com/hyb1996) }
     - `Auto.js VSCode 开发插件`
-* [Auto.js-VSCode-Extension](https://github.com/710850609/Auto.js-VSCode-Extension) {
-  author: [710850609](https://github.com/710850609) }
+* [Auto.js-VSCode-Extension](https://github.com/710850609/Auto.js-VSCode-Extension) { author: [710850609](https://github.com/710850609) }
     - `Auto.js VSCode 开发插件 (二次开发项目)`
-* [Auto.js-VSCode-Extension](https://github.com/kkevsekk1/Auto.js-VSCode-Extension) {
-  author: [kkevsekk1](https://github.com/kkevsekk1) }
+* [Auto.js-VSCode-Extension](https://github.com/kkevsekk1/Auto.js-VSCode-Extension) { author: [kkevsekk1](https://github.com/kkevsekk1) }
     - `Auto.js VSCode 开发插件 (二次开发项目)`

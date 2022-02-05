@@ -2,7 +2,7 @@
   "name": "autojs6-vscode-ext",
   "displayName": "AutoJs6 (Auto.js v6.x) VSCode Extension",
   "description": "Debugger for AutoJs6 (Auto.js v6.x)",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "publisher": "003",
   "icon": "assets/images/icon_autojs_logo.png",
   "repository": {

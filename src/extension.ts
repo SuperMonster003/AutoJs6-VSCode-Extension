@@ -7,7 +7,7 @@ import * as vscode from 'vscode';
 import * as util from './util';
 
 import {Adb} from './adb';
-import {Memento, TextEditor} from 'vscode';
+import {Memento, TextEditor, OutputChannel} from 'vscode';
 import {AddressInfo} from 'net';
 import {awaiter} from './awaiter';
 import {Devices, Device, DeviceInfo, DeviceDataInfo} from './device';
@@ -19,7 +19,7 @@ let recentDevice = null;
 
 const LOOP_BACK: string = '127.0.0.1';
 const EXTENSION_NAME: string = 'AutoJs6 VSCode Extension';
-const devices_channels = {};
+const deviceChannel: {[prop: string]: OutputChannel} = {};
 
 export class Extension {
     private readonly context: vscode.ExtensionContext;
@@ -130,12 +130,12 @@ export class Extension {
                 if (!devs.includes(addr)) {
                     this.storage.update(this.storage_key, [addr].concat(devs));
                 }
-                let dev_chn = devices_channels[device.deviceId];
-                if (!dev_chn) {
-                    dev_chn = vscode.window.createOutputChannel(`Channel for (${device})`);
-                    devices_channels[device.deviceId] = dev_chn;
+                let devChn = deviceChannel[device.deviceId];
+                if (!devChn) {
+                    devChn = vscode.window.createOutputChannel(`Channel for (${device})`);
+                    deviceChannel[device.deviceId] = devChn;
                 }
-                dev_chn.show();
+                devChn.show(true);
                 vscode.window.showInformationMessage(`AutoJs6 设备接入: ${device}`);
             })
             .on('detach_device', (device: Device) => {
@@ -143,11 +143,11 @@ export class Extension {
             })
             .on('log', (data: DeviceDataInfo) => {
                 logDebug('## on log');
-                let channel = devices_channels[data.device.deviceId];
+                let channel = deviceChannel[data.device.deviceId];
                 if (channel) {
                     channel.appendLine(data.log);
                 }
-                logDebug('## channel output: ' + data);
+                logDebug('## channel output: ' + data.log);
             });
     }
 
