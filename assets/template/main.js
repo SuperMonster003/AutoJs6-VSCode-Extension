@@ -1,1 +1,1 @@
-toastLog('Hello, Auto.js ' + $app.autojs.versionName);
+toastLog('Hello, AutoJs6 ' + app.autojs.versionName);

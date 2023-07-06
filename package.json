@@ -1,13 +1,17 @@
 {
   "name": "autojs6-vscode-ext",
-  "displayName": "AutoJs6 (Auto.js v6.x) VSCode Extension",
-  "description": "Debugger for AutoJs6 (Auto.js v6.x)",
-  "version": "1.0.4",
+  "displayName": "AutoJs6 VSCode Extension",
+  "description": "Debugger for AutoJs6",
+
+  "version": "1.0.5",
+  "requiredClientVersionName": "6.3.2",
+  "requiredClientVersionCode": "1995",
+
   "publisher": "003",
-  "icon": "assets/images/icon_autojs_logo.png",
+  "icon": "assets/images/autojs6_material.png",
   "repository": {
     "type": "github",
-    "url": "https://github.com/SuperMonster003/AutoJs6-VSCode-Extension"
+    "url": "http://vscext-project.autojs6.com"
   },
   "engines": {
     "vscode": "^1.34.0"
@@ -17,20 +21,7 @@
     "Debuggers"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onCommand:extension.connect",
-    "onCommand:extension.disconnectAll",
-    "onCommand:extension.newProject",
-    "onCommand:extension.rerun",
-    "onCommand:extension.run",
-    "onCommand:extension.runOnDevice",
-    "onCommand:extension.runProject",
-    "onCommand:extension.save",
-    "onCommand:extension.saveProject",
-    "onCommand:extension.saveToDevice",
-    "onCommand:extension.stop",
-    "onCommand:extension.stopAll",
-    "onCommand:extension.viewDocument"
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -142,6 +133,30 @@
         "key": "ctrl+f6",
         "mac": "ctrl+f6",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.runProject",
+        "key": "alt+f6",
+        "mac": "cmd+f6",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.runProject",
+        "key": "ctrl+alt+6 r",
+        "mac": "ctrl+cmd+6 r",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.newProject",
+        "key": "ctrl+alt+6 n",
+        "mac": "ctrl+cmd+6 n",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.saveProject",
+        "key": "ctrl+alt+6 s",
+        "mac": "ctrl+cmd+6 s",
+        "when": "editorTextFocus"
       }
     ]
   },
@@ -157,13 +172,15 @@
     "@types/node": "^12.20.37",
     "@types/vscode": "^1.1.37",
     "@vscode/test-electron": "^1.6.2",
-    "typescript": "^4.5.2"
+    "typescript": "^4.8.4"
   },
   "dependencies": {
     "@types/archiver": "^3.0.0",
-    "archiver": "^3.0.0",
     "@types/stream-buffers": "^3.0.2",
-    "stream-buffers": "^3.0.2"
+    "archiver": "^3.0.0",
+    "iconv-lite": "^0.6.3",
+    "stream-buffers": "^3.0.2",
+    "websocket": "^1.0.34"
   },
   "__npminstall_done": false
 }

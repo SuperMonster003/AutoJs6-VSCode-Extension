@@ -1,66 +1,78 @@
 import * as net from 'net';
-import {Server, Socket} from 'net';
+import * as fs from 'fs';
+import * as path from 'path';
+import { Server, Socket } from 'net';
 import * as events from 'events';
-import * as zlib from 'zlib';
 import * as vscode from 'vscode';
 import * as project from './project';
-import {Project, ProjectObserver} from './project';
-import {logDebug} from './util';
+import { Project, ProjectObserver } from './project';
+import { buffToString, logDebug } from './util';
+import { CONNECTION_TYPE_CLIENT_LAN, CONNECTION_TYPE_SERVER_ADB, CONNECTION_TYPE_SERVER_LAN, Extension, ProjectCommands, connectedServerAdb, connectedServerLan } from './extension';
+
+let packageJson: string = fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8');
+let projectPackage = JSON.parse(packageJson);
+
+export const REQUIRED_AUTOJS6_VERSION_NAME = projectPackage.requiredClientVersionName;
+export const REQUIRED_AUTOJS6_VERSION_CODE = parseInt(projectPackage.requiredClientVersionCode) || -1;
 
 const HEADER_SIZE = 8;
-const TYPE_TEXT = 1;
-const TYPE_BINARY = 2;
-const TYPE_GZIP_TEXT = 3;
-const TYPE_GZIP_BINARY = 4;
+
+const TYPE_JSON = 1;
+const TYPE_BYTES = 2;
+
 const LISTENING_PORT = 6347;
-const CLIENT_PORT = 9317;
-const HTTP_SERVER_PORT = 27139;
+const CLIENT_PORT = 7347;
+const CLIENT_ADB_SERVER_PORT = 20347;
+export const HTTP_SERVER_PORT = 10347;
 const HANDSHAKE_TIMEOUT = 5e3;
-const PROTOCOL_VERSION_4 = 4;
-const PROTOCOL_VERSION = PROTOCOL_VERSION_4;
 
 export class Device extends events.EventEmitter {
-    private versionCode: number;
-    private protocolVersion: number;
-    private id: number;
+
+    private versionCode = 0;
+    private id = 1;
     private name: string;
     private version: string;
-    private isAttached: boolean;
+    private isAttached = false;
 
     connection: Socket;
     deviceId: string;
-    adbDeviceId: string;
-    httpServerPort: number = Device.defaultHttpServerPort;
     projectObserver: ProjectObserver;
+    adbDeviceId: string = null;
+    host: string = null;
+    isNormallyClosed: boolean = false;
 
-    static defaultHttpServerPort: number = HTTP_SERVER_PORT;
     static defaultClientPort: number = CLIENT_PORT;
+    static defaultAdbServerPort: number = CLIENT_ADB_SERVER_PORT;
 
     constructor(connection: Socket) {
         super();
 
-        this.id = 1;
-        this.versionCode = 0;
-        this.protocolVersion = 0;
-        this.isAttached = false;
         this.connection = connection;
-        this.read(this.connection);
-        this.toString = () => `${this.name}${this.connection ? ` (${this.connectionToString()})` : ''}`;
-        this.on('data:hello', (data) => {
+        this.read(connection);
+
+        this.on('data:hello', (data: HelloData) => {
             logDebug('on server hello: ', data);
 
             this.isAttached = true;
-            this.name = data['device_name'] || 'unknown device';
-            this.version = data['app_version'];
-            this.versionCode = data['app_version_code'];
-            this.protocolVersion = data['server_version'];
-            this.deviceId = data['device_id'];
+            this.name = data.device_name || 'unknown device';
+            this.version = data.app_version;
+            this.versionCode = parseInt(data.app_version_code);
+            if (this.versionCode < REQUIRED_AUTOJS6_VERSION_CODE) {
+                let releasesUrl = 'https://github.com/SuperMonster003/AutoJs6/releases/';
+                const errMessage = `无法建立连接, 请确认 AutoJs6 版本不低于 ${REQUIRED_AUTOJS6_VERSION_NAME}`;
+                vscode.window.showErrorMessage(errMessage, '查看所有项目版本')
+                    .then(choice => choice && vscode.env.openExternal(vscode.Uri.parse(releasesUrl)));
+                this.sendHello(errMessage);
+                this.connection.destroy();
+                this.connection = null;
+                return;
+            }
+            this.deviceId = data.device_id;
 
-            this.send('hello', {
-                client_version: PROTOCOL_VERSION,
-            });
+            this.sendHello();
             this.emit('attach', this);
         });
+
         setTimeout(() => {
             if (!this.isAttached) {
                 logDebug('Handshake timed out');
@@ -71,108 +83,75 @@ export class Device extends events.EventEmitter {
         }, HANDSHAKE_TIMEOUT);
     }
 
-    send(type: string, data: object) {
-        logDebug('## Device.send');
-
-        let id = this.id++;
-        this.sendUTF8(JSON.stringify({
-            id: id,
-            type: type,
-            data: data,
-        }));
-        return id;
+    toString() {
+        return `${this.name}${this.connection ? ` (${this.connectionToString()})` : ''}`;
     }
 
-    sendUTF8(data: string) {
-        logDebug('## Device.sendUTF8');
-        logDebug('Protocol ver', PROTOCOL_VERSION_4);
+    sendJson(data: object) {
+        logDebug('## [m] Device.sendUTF8');
 
-        let bytes = Buffer.from(data, 'utf-8');
+        let bytes: Buffer = Buffer.from(JSON.stringify(data), 'utf-8');
+        let string = buffToString(bytes);
 
-        if (this.protocolVersion >= PROTOCOL_VERSION_4) {
-            zlib.gzip(bytes, (error, result) => {
-                if (error) {
-                    console.error(error);
-                    return;
-                }
-                logDebug('Sending gzip bytes');
-                logDebug('Gzip buffer str: ' + bytes.toString());
-                logDebug('Gzip buffer str length: ' + bytes.toString().length);
-                logDebug('Gzipped buffer str: ' + result.toString());
-                logDebug('Gzipped buffer str length: ' + result.toString().length);
-                this.sendBytesWithType(TYPE_GZIP_TEXT, result);
-            });
-        } else {
-            logDebug('Sending text bytes');
-            this.sendBytesWithType(TYPE_TEXT, bytes);
-        }
-    }
+        let headerBuffer = Buffer.allocUnsafe(HEADER_SIZE);
+        headerBuffer.write(String(string.length), 0);
+        headerBuffer.write(String(TYPE_JSON), 4);
 
-    sendBytesWithType(type: number, bytes: Buffer) {
-        logDebug('## Device.sendBytesWithType');
-        logDebug(`type: ${type}`);
-        logDebug(`bytes: ${bytes.toString()}`);
+        this.connection.write(headerBuffer);
+        this.connection.write(string);
+        // this.connection.write('\r\n');
 
-        let buffer = Buffer.concat([Buffer.alloc(8), bytes]);
-        buffer.writeInt32BE(bytes.length, 0);
-        buffer.writeInt32BE(type, 4);
-        logDebug('## writing...');
-        logDebug('## bytes length: ' + bytes.length);
-        logDebug('## buffer length: ' + buffer.length);
-
-        if (this.protocolVersion >= PROTOCOL_VERSION_4) {
-            this.connection.write(buffer);
-        } else {
-            this.connection.write(buffer.toString() + '\r\n');
-        }
-        logDebug('## written ok');
+        logDebug('## Written json ok: ' + string);
+        logDebug('## Written json length: ' + bytes.length);
+        logDebug('## Written json string length: ' + string.length);
     }
 
     sendBytes(bytes: Buffer) {
-        logDebug('## Device.sendBytes');
+        logDebug('## [m] Device.sendBytes');
 
-        if (this.protocolVersion >= PROTOCOL_VERSION_4) {
-            zlib.gzip(bytes, (error, result) => {
-                if (error) {
-                    console.error(error);
-                    return;
-                }
-                this.sendBytesWithType(TYPE_GZIP_BINARY, result);
-            });
-        } else {
-            this.sendBytesWithType(TYPE_BINARY, bytes);
-        }
+        let string = bytes.toString('latin1');
+
+        let headerBuffer = Buffer.allocUnsafe(HEADER_SIZE);
+        headerBuffer.write(String(string.length), 0);
+        headerBuffer.write(String(TYPE_BYTES), 4);
+
+        this.connection.write(headerBuffer);
+        this.connection.write(string);
+        // this.connection.write('\r\n');
+
+        logDebug(bytes);
+        logDebug('## Written bytes ok: ' + string);
+        logDebug('## Written bytes length: ' + bytes.length);
+        logDebug('## Written bytes string length: ' + string.length);
     }
 
-    sendBytesCommand(command, md5, data = {}) {
-        logDebug('## Device.sendBytesCommand');
+    sendHello(err?: string) {
+        logDebug('## [m] Device.sendHello');
 
-        data = Object(data);
-        data['command'] = command;
-        this.sendUTF8(JSON.stringify({
-            type: 'bytes_command',
-            md5: md5,
-            data: data,
-        }));
+        let id = this.id++;
+        let data = { extensionVersion: projectPackage.version };
+        if (err) {
+            data['errorMessage'] = err;
+        }
+        this.sendJson({ id: id, type: 'hello', data: data });
+        return id;
     }
 
     sendCommand(command, data = {}) {
-        logDebug('## Device.sendCommand');
+        logDebug('## [m] Device.sendCommand');
 
-        return this.send('command', Object.assign(Object(data), {command}));
+        let id = this.id++;
+        this.sendJson({ id: id, type: 'command', data: Object.assign(Object(data), { command }) });
+        return id;
     }
 
     disconnect() {
-        logDebug('## Device.disconnect');
-
         this.connection.destroy();
+        this.isNormallyClosed = true;
     }
 
     connectionToString() {
-        logDebug('## Device.connectionToString');
-
-        let remoteAddress = this.connection.remoteAddress.replace(/.*?:?((\d+\.){3}\d+$)/, '$1');
-
+        let remoteAddress = this.connection.remoteAddress?.replace(/.*?:?((\d+\.){3}\d+$)/, '$1') || 'Unknown';
         return remoteAddress == '127.0.0.1' ? `${remoteAddress}:${this.connection.remotePort}` : remoteAddress;
     }
 
@@ -185,7 +164,6 @@ export class Device extends events.EventEmitter {
         let _ = {
             isLastDataComplete: true,
             jointData: <Buffer>Buffer.allocUnsafe(0),
-            parsedDataLength: DEFAULT_DATA_LENGTH,
             parsedDataType: DEFAULT_DATA_TYPE,
             onData(chunk: Buffer, parser: (dataType: number, data: Buffer) => void) {
                 let offset = 0;
@@ -219,7 +197,7 @@ export class Device extends events.EventEmitter {
             },
             joinData(data: Buffer): void {
                 logDebug(`length of data to be joint: ${data.length}`);
-                this.jointData = Buffer.concat([this.jointData, data]);
+                this.jointData = Buffer.concat([ this.jointData, data ]);
             },
             parseHeader(chunk: Buffer) {
                 this.parsedDataLength = chunk.readInt32BE(0);
@@ -268,24 +246,7 @@ export class Device extends events.EventEmitter {
         logDebug('## Device.onData');
         logDebug(`onData: type = ${dataType}, length = ${data.length}, content = ${data}`);
 
-        if (dataType == TYPE_TEXT) {
-            this.handleJsonData(data);
-            return;
-        }
-        if (dataType == TYPE_GZIP_TEXT) {
-            try {
-                zlib.gunzip(data, (error, buffer) => {
-                    if (error) {
-                        console.error(error);
-                        return;
-                    }
-                    this.handleJsonData(buffer);
-                });
-            } catch (e) {
-                console.error(e);
-            }
-            return;
-        }
+        this.handleJsonData(data);
     }
 
     handleJsonData(data: Buffer) {
@@ -305,12 +266,15 @@ export class Device extends events.EventEmitter {
 }
 
 export class Devices extends events.EventEmitter {
+
     devices: Device[];
     project: Project;
 
     private recentDevice: null;
     private serverSocket: Server;
     private readonly fileFilter: (relativePath, absPath, stats) => (boolean | any);
+
+    isServerSocketNormallyClosed: boolean = false;
 
     constructor() {
         super();
@@ -328,7 +292,7 @@ export class Devices extends events.EventEmitter {
         });
         Devices.instance = this;
         this.serverSocket.listen(LISTENING_PORT, () => {
-            logDebug('server listening at ' + LISTENING_PORT);
+            logDebug(`server listening on port ${LISTENING_PORT}`);
         });
     }
 
@@ -343,19 +307,30 @@ export class Devices extends events.EventEmitter {
 
         new Device(socket).on('attach', (dev) => {
             logDebug('## on attach (accept)');
-            this.emit('new_device', dev);
-            this.attachDevice(dev);
+            this.attachDevice(dev, CONNECTION_TYPE_CLIENT_LAN);
             logDebug('## on attach (accept) end');
         });
 
         logDebug('## Devices.accept end');
     }
 
-    connectTo(host, port, adbDeviceId?, httpServerPort?) {
+    connectTo(host, port, type, adbDeviceId?) {
         logDebug('## Devices.connectTo');
 
         return new Promise((resolve, reject) => {
             logDebug(`connecting to ${host}:${port}`);
+
+            if (type === CONNECTION_TYPE_SERVER_LAN) {
+                if (connectedServerLan.has(host)) {
+                    vscode.window.showWarningMessage(`服务端设备 ${host} 已建立连接 (局域网), 无需重复连接`);
+                    return resolve(true);
+                }
+            } else if (type === CONNECTION_TYPE_SERVER_ADB) {
+                if (connectedServerAdb.has(adbDeviceId)) {
+                    vscode.window.showWarningMessage(`服务端设备 ${adbDeviceId} 已建立连接 (ADB), 无需重复连接`);
+                    return resolve(true);
+                }
+            }
 
             let socket = new net.Socket();
             socket.connect(port, host, () => {
@@ -363,13 +338,13 @@ export class Devices extends events.EventEmitter {
                 if (typeof adbDeviceId !== 'undefined') {
                     device.adbDeviceId = adbDeviceId;
                 }
-                if (typeof httpServerPort !== 'undefined') {
-                    device.httpServerPort = httpServerPort;
-                }
                 device.on('attach', () => {
                     logDebug('## on attach (connectTo)');
-                    this.emit('new_device', device);
-                    this.attachDevice(device);
+                    if (typeof adbDeviceId !== 'undefined') {
+                        this.attachDevice(device, CONNECTION_TYPE_SERVER_ADB);
+                    } else {
+                        this.attachDevice(device, CONNECTION_TYPE_SERVER_LAN);
+                    }
                     resolve(device);
                 });
             });
@@ -380,31 +355,7 @@ export class Devices extends events.EventEmitter {
         });
     }
 
-    send(type, data) {
-        logDebug('## Devices.send');
-
-        this.devices.forEach(device => {
-            device.send(type, data);
-        });
-    }
-
-    sendBytes(data) {
-        logDebug('## Devices.sendBytes');
-
-        this.devices.forEach(device => {
-            device.sendBytes(data);
-        });
-    }
-
-    sendBytesCommand(command, md5, data = {}) {
-        logDebug('## Devices.sendBytesCommand');
-
-        this.devices.forEach(device => {
-            device.sendBytesCommand(command, md5, data);
-        });
-    }
-
-    sendProjectCommand(folder, command) {
+    sendProjectCommand(folder, command: ProjectCommands) {
         logDebug('## Devices.sendProjectCommand');
 
         this.devices.forEach((device) => {
@@ -414,11 +365,16 @@ export class Devices extends events.EventEmitter {
             device.projectObserver.diff()
                 .then((result) => {
                     device.sendBytes(result.buffer);
-                    device.sendBytesCommand(command, result.md5, {
-                        'id': folder,
-                        'name': folder,
-                        'deletedFiles': result.deletedFiles,
-                        'override': result.full,
+                    device.sendJson({
+                        type: 'bytes_command',
+                        md5: result.md5,
+                        data: {
+                            id: folder,
+                            name: folder,
+                            deletedFiles: result.deletedFiles,
+                            override: result.full,
+                            command: command,
+                        },
                     });
                 });
         });
@@ -428,7 +384,7 @@ export class Devices extends events.EventEmitter {
     sendCommand(command, data = {}) {
         logDebug('## Devices.sendCommand');
 
-        this.devices.forEach(dev => dev.sendCommand(command, data));
+        this.devices.forEach(device => device.sendCommand(command, data));
     }
 
     disconnect() {
@@ -451,19 +407,29 @@ export class Devices extends events.EventEmitter {
         return this.devices.find(device => device.deviceId === id);
     }
 
-    attachDevice(device: Device) {
+    attachDevice(device: Device, type: number) {
         logDebug('## Devices.attachDevice');
         logDebug('attaching device: ' + device);
 
+        this.emit('new_device', device, type);
         this.devices.push(device);
 
-        device.on('data:log', (info: DeviceDataInfo) => {
+        device.on('data:log', (info: LogData) => {
             logDebug('## on data:log');
             logDebug(info.log);
             this.emit('log', {
                 log: info.log,
                 device: device,
             });
+        });
+        device.on('data:command', (param: CommandParam) => {
+            let cmd = param['\xa0cmd\xa0'];
+            if (!Extension.commands.includes(cmd)) {
+                vscode.window.showErrorMessage(`接收到未知指令 "${cmd}"`);
+                return;
+            }
+            vscode.window.showInformationMessage(`执行接收到的指令 "${cmd}"`);
+            vscode.commands.executeCommand(`extension.${cmd}`);
         });
         device.on('disconnect', this.detachDevice.bind(this, device));
 
@@ -480,6 +446,10 @@ export class Devices extends events.EventEmitter {
         logDebug('detachDevice: ' + device);
         this.emit('detach_device', device);
     }
+
+    hasDevices() {
+        return this.devices.length > 0;
+    }
 }
 
 export interface DeviceInfo {
@@ -489,7 +459,19 @@ export interface DeviceInfo {
     name: string;
 }
 
-export interface DeviceDataInfo {
+export interface LogData {
     log: string;
     device: Device;
+}
+
+interface HelloData {
+    device_id: string;
+    device_name: string;
+    app_version: string;
+    app_version_code: string;
+}
+
+interface CommandParam {
+    '\xa0cmd\xa0': 'viewDocument' | 'connect' | 'disconnectAll' | 'run' | 'runOnDevice' | 'stop' | 'stopAll' | 'rerun' | 'save' | 'saveToDevice' | 'newProject' | 'runProject' | 'saveProject';
+    path: string;
 }

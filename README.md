@@ -2,20 +2,19 @@
 
 <div align="center">
   <p>
-    <img alt="autojs6-vscode-ext-banner" src="https://github.com/SuperMonster002/Hello-Sockpuppet/raw/master/autojs6-vscode-ext-banner_1024×310.png" width="512"/>
+    <img src="https://s1.imagehub.cc/images/2023/03/07/8d09e153dd83ad9d523f14c28447a02e.png" alt="autojs6-vscode-ext-banner_1024×310" border="0" width="496" />
   </p>
 
-  <p>AutoJs6 (Auto.js v6.x) 调试工具 (VSCode 插件)</p>
-  <p>Debugger for AutoJs6 (Auto.js v6.x) on VSCode</p>
+  <p>AutoJs6 (AutoJs6 调试工具 (VSCode 插件)</p>
+  <p>Debugger for AutoJs6 on VSCode</p>
 
   <p>
     <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/issues"><img alt="GitHub closed issues" src="https://img.shields.io/github/issues/SuperMonster003/AutoJs6-VSCode-Extension?color=009688"/></a>
-    <a href="https://github.com/SuperMonster003/AutoJs6"><img alt="GitHub AutoJs6 repository" src="https://img.shields.io/badge/auto.js->= 6.0.2-67a91b"/></a>
+    <a href="https://github.com/SuperMonster003/AutoJs6"><img alt="GitHub AutoJs6 repository" src="https://img.shields.io/badge/auto.js->= 6.3.2-67a91b"/></a>
     <a href="https://github.com/topics/javascript"><img alt="GitHub top language" src="https://img.shields.io/github/languages/top/SuperMonster003/AutoJs6-VSCode-Extension?color=eb8031"/></a>
     <br>
     <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/commit/d43a0119b214a17062501ea8a938b13bd97d2028"><img alt="Created" src="https://img.shields.io/date/1638929280?color=2e7d32&label=created"/></a>
     <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/find/master"><img alt="GitHub Code Size" src="https://img.shields.io/github/languages/code-size/SuperMonster003/AutoJs6-VSCode-Extension?color=795548"/></a>
-    <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/find/master"><img alt="GitHub Code Lines" src="https://img.shields.io/tokei/lines/github/SuperMonster003/AutoJs6-VSCode-Extension?color=37474F"/></a>
     <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/blob/master/LICENSE"><img alt="GitHub License" src="https://img.shields.io/github/license/SuperMonster003/AutoJs6-VSCode-Extension?color=534BAE"/></a>
   </p>
 </div>
@@ -26,8 +25,8 @@
 
 ******
 
-* 支持 [AutoJs6](https://github.com/SuperMonster003/AutoJs6) 开发的 [VSCode](https://code.visualstudio.com/) 插件
-* 复刻 (Fork) 自 [hyb1996/Auto.js-VSCode-Extension](https://github.com/hyb1996/Auto.js-VSCode-Extension)
+* 支持 [AutoJs6](https://github.com/SuperMonster003/AutoJs6) 脚本调试与运行的 [VSCode](https://code.visualstudio.com/) 插件
+* 克隆 (Clone) 自 [hyb1996/Auto.js-VSCode-Extension](https://github.com/hyb1996/Auto.js-VSCode-Extension)
 
 ******
 
@@ -74,11 +73,11 @@
     - `AutoJs6 (服务端) < VSCode (客户端) | ADB (USB)`
         - AutoJs6 侧拉菜单中开启 "服务端模式"
         - AutoJs6 所在设备通过 USB 连接到 VSCode 所在计算机
-        - AutoJs6 所在设备需开启 USB 调试模式并勾选信任上述计算机
+        - AutoJs6 所在设备需启用 USB 调试模式并勾选信任上述计算机
         - 不同设备操作方式可能不同 详见设备厂商手册或相关互联网资料
     - `历史记录 (IP)`
         - 连接成功后的设备 IP 地址会记录在列表中方便选择
-        - AutoJs6 需开启 "服务端模式"
+        - AutoJs6 需启用 "服务端模式"
         - 设备 IP 地址可能发生改变
         - 使用 "清理" 选项清除所有已保存的记录
 - VSCode 弹窗显示 `AutoJs6 设备接入: ${DEVICE} (${IP_ADDRESS})` 完成设备连接
@@ -130,17 +129,16 @@
     - 对所有已连接的设备有效
 - 保存到所有设备 (Save)
     - 保存当前文件到已连接设备的 AutoJs6 工作目录
-    - 文件名附加前缀 "remote"
     - 对所有已连接的设备有效
 - 指定设备运行 (Run On Device)
     - 弹出设备菜单并指定运行 VSCode 对应脚本的设备
 - 保存到指定设备 (Save To Device)
     - 弹出设备菜单并在指定保存 VSCode 对应脚本的设备
-- 新建项目 (New Project)
+- 新建项目 (New Project) `[ CTRL+ALT+6 N ]`
     - 选择 (或创建后选择) 一个空文件夹用于新建 AutoJs6 项目
-- 运行项目 (Run Project)
+- 运行项目 (Run Project) `[ CTRL+ALT+6 R / Alt+F6 ]`
     - 运行一个 AutoJs6 项目
-- 保存项目到设备 (Save Project)
+- 保存项目到设备 (Save Project) `[ CTRL+ALT+6 S ]`
     - 保存一个 AutoJs6 项目
 
 ******
@@ -148,6 +146,18 @@
 ### 版本历史 (Release Notes)
 
 ******
+
+# v1.0.5
+
+###### 2023/07/06
+
+* `新增` 支持通过 HTTP 协议携带参数执行插件命令 _[`issue #6`](http://vscext-project.autojs6.com/issues/6)_
+* `新增` 已建立连接的历史客户端支持显示最近连接时间
+* `修复` 无法保存文件到设备以及无法运行或保存项目的问题 _[`issue #5`](http://vscext-project.autojs6.com/issues/5)_
+* `优化` 插件命令选择窗口增加详细说明便于用户了解并选择合适的连接方式
+* `优化` 实现 VSCode 插件与 AutoJs6 的双向版本检测并提示异常检测结果
+* `优化` 支持同一设备使用同一方式重复连接的行为检测及提示
+* `优化` 清除连接设备历史记录时增加确认操作提示
 
 # v1.0.4
 
@@ -162,12 +172,6 @@
 
 * `修复` VSCode 焦点位于输出面板 (OUTPUT) 时无法运行脚本的问题
 
-# v1.0.2
-
-###### 2022/01/02
-
-* `修复` VSCode 无设备连接历史时无法建立连接的问题
-
 ##### 更多版本历史可参阅
 
 * [CHANGELOG.md](https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/blob/master/assets/docs/CHANGELOG.md)
@@ -178,8 +182,10 @@
 
 ******
 
-* [AutoJs6](https://github.com/SuperMonster003/AutoJs6) { author: [SuperMonster003](https://github.com/SuperMonster003) }
+* [AutoJs6](http://autojs6.com) { author: [SuperMonster003](https://github.com/SuperMonster003) }
     - `安卓平台 JavaScript 自动化工具 (二次开发项目)`
+* [AutoJs6-TypeScript-Declarations](http://dts-project.autojs6.com) { author: [SuperMonster003](https://github.com/SuperMonster003) }
+    - `AutoJs6 声明文件 (代码智能补全)`
 * [Auto.js-VSCode-Extension](https://github.com/hyb1996/Auto.js-VSCode-Extension) { author: [hyb1996](https://github.com/hyb1996) }
     - `Auto.js VSCode 开发插件`
 * [Auto.js-VSCode-Extension](https://github.com/710850609/Auto.js-VSCode-Extension) { author: [710850609](https://github.com/710850609) }

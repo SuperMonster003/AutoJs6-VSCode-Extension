@@ -10,7 +10,8 @@
             "es5"
         ],
         "sourceMap": true,
-        "rootDir": "src"
+        "rootDir": "src",
+        "resolveJsonModule": true
     },
     "exclude": [
         "node_modules",

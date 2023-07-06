@@ -5,9 +5,10 @@ import * as vscode from 'vscode';
 import * as archiver from 'archiver';
 import * as streamBuffers from 'stream-buffers';
 
-import {Uri} from 'vscode';
-import {FileObserver, FileFilter} from './diff';
-import {awaiter} from "./awaiter";
+import { Uri } from 'vscode';
+import { FileObserver, FileFilter } from './diff';
+import { awaiter } from './awaiter';
+import { logDebug } from './util';
 
 export class ProjectTemplate {
     private readonly outUri: Uri;
@@ -21,7 +22,7 @@ export class ProjectTemplate {
     build() {
         return awaiter(function* () {
             const uri = this.outUri;
-            yield this.copyDirIfNotExists(this.templateDirUri.fsPath, this.outUri.fsPath);
+            yield this.copyDirIfNotExists(this.templateUri.fsPath, this.outUri.fsPath);
             return uri;
         }.bind(this));
     }
@@ -38,7 +39,7 @@ export class ProjectTemplate {
                     const dir = path.dirname(target);
                     fs.existsSync(dir)
                         ? yield fs.promises.copyFile(source, target)
-                        : yield fs.promises.mkdir(dir, {recursive: true});
+                        : yield fs.promises.mkdir(dir, { recursive: true });
                 }
             }.bind(this)));
         }.bind(this));
@@ -97,7 +98,7 @@ export class ProjectObserver {
                 const streamBuffer = new streamBuffers.WritableStreamBuffer();
                 zip.pipe(streamBuffer);
                 fileChanges.modified.forEach((relativePath) => {
-                    zip.append(fs.createReadStream(path.join(this.folder, relativePath)), {name: relativePath});
+                    zip.append(fs.createReadStream(path.join(this.folder, relativePath)), { name: relativePath });
                 });
                 zip.finalize();
                 return new Promise<{ buffer: Buffer, deletedFiles: string[] }>((resolve) => {
@@ -113,7 +114,8 @@ export class ProjectObserver {
             .then((result) => {
                 let md5 = crypto.createHash('md5').update(result.buffer).digest('hex');
                 let isDiffed = this.isDiffed;
-                this.isDiffed = true
+                this.isDiffed = true;
+                logDebug(Array.from(result.buffer).map(x => x >= 128 ? x - 256 : x).join(','));
                 return {
                     buffer: result.buffer,
                     md5: md5,
