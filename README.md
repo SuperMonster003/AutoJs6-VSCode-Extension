@@ -10,7 +10,7 @@
 
   <p>
     <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/issues"><img alt="GitHub closed issues" src="https://img.shields.io/github/issues/SuperMonster003/AutoJs6-VSCode-Extension?color=009688"/></a>
-    <a href="https://github.com/SuperMonster003/AutoJs6"><img alt="GitHub AutoJs6 repository" src="https://img.shields.io/badge/auto.js->= 6.3.2-67a91b"/></a>
+    <a href="https://github.com/SuperMonster003/AutoJs6"><img alt="GitHub AutoJs6 repository" src="https://img.shields.io/badge/auto.js->= 6.3.3-67a91b"/></a>
     <a href="https://github.com/topics/javascript"><img alt="GitHub top language" src="https://img.shields.io/github/languages/top/SuperMonster003/AutoJs6-VSCode-Extension?color=eb8031"/></a>
     <br>
     <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/commit/d43a0119b214a17062501ea8a938b13bd97d2028"><img alt="Created" src="https://img.shields.io/date/1638929280?color=2e7d32&label=created"/></a>
