@@ -4,6 +4,12 @@
 
 ******
 
+# v1.0.6
+
+###### 2023/07/21
+
+* `修复` 服务端发送消息长度超过四位十进制数时长度数据被截断的问题 _[`issue #7`](http://vscext-project.autojs6.com/issues/7)_ _[`issue #9`](http://vscext-project.autojs6.com/issues/9)_
+
 # v1.0.5
 
 ###### 2023/07/06

@@ -15,7 +15,8 @@ let projectPackage = JSON.parse(packageJson);
 export const REQUIRED_AUTOJS6_VERSION_NAME = projectPackage.requiredClientVersionName;
 export const REQUIRED_AUTOJS6_VERSION_CODE = parseInt(projectPackage.requiredClientVersionCode) || -1;
 
-const HEADER_SIZE = 8;
+const SERVER_HEADER_SIZE = 16;
+const CLIENT_HEADER_SIZE = 8;
 
 const TYPE_JSON = 1;
 const TYPE_BYTES = 2;
@@ -93,9 +94,9 @@ export class Device extends events.EventEmitter {
         let bytes: Buffer = Buffer.from(JSON.stringify(data), 'utf-8');
         let string = buffToString(bytes);
 
-        let headerBuffer = Buffer.allocUnsafe(HEADER_SIZE);
+        let headerBuffer = Buffer.allocUnsafe(SERVER_HEADER_SIZE);
         headerBuffer.write(String(string.length), 0);
-        headerBuffer.write(String(TYPE_JSON), 4);
+        headerBuffer.write(String(TYPE_JSON), SERVER_HEADER_SIZE - 2);
 
         this.connection.write(headerBuffer);
         this.connection.write(string);
@@ -111,9 +112,9 @@ export class Device extends events.EventEmitter {
 
         let string = bytes.toString('latin1');
 
-        let headerBuffer = Buffer.allocUnsafe(HEADER_SIZE);
+        let headerBuffer = Buffer.allocUnsafe(SERVER_HEADER_SIZE);
         headerBuffer.write(String(string.length), 0);
-        headerBuffer.write(String(TYPE_BYTES), 4);
+        headerBuffer.write(String(TYPE_BYTES), SERVER_HEADER_SIZE - 2);
 
         this.connection.write(headerBuffer);
         this.connection.write(string);
@@ -170,8 +171,8 @@ export class Device extends events.EventEmitter {
                 let expectedChunkLen = ( /* @IIFE */ () => {
                     if (this.isLastDataComplete) {
                         this.parseHeader(chunk);
-                        offset += HEADER_SIZE;
-                        return HEADER_SIZE + this.parsedDataLength;
+                        offset += CLIENT_HEADER_SIZE;
+                        return CLIENT_HEADER_SIZE + this.parsedDataLength;
                     }
                     return this.parsedDataLength - this.getJointDataLength();
                 })();

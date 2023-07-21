@@ -3,9 +3,9 @@
   "displayName": "AutoJs6 VSCode Extension",
   "description": "Debugger for AutoJs6",
 
-  "version": "1.0.5",
-  "requiredClientVersionName": "6.3.2",
-  "requiredClientVersionCode": "1995",
+  "version": "1.0.6",
+  "requiredClientVersionName": "6.3.3",
+  "requiredClientVersionCode": "2046",
 
   "publisher": "003",
   "icon": "assets/images/autojs6_material.png",

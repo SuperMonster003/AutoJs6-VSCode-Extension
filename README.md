@@ -147,6 +147,12 @@
 
 ******
 
+# v1.0.6
+
+###### 2023/07/21
+
+* `修复` 服务端发送消息长度超过四位十进制数时长度数据被截断的问题 _[`issue #7`](http://vscext-project.autojs6.com/issues/7)_ _[`issue #9`](http://vscext-project.autojs6.com/issues/9)_
+
 # v1.0.5
 
 ###### 2023/07/06
@@ -165,12 +171,6 @@
 
 * `修复` 当 AutoJs6 单次生成日志长度较大时无法正常拼接的问题  _[`issue #4`](https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/issues/4)_
 * `修复` 新设备建立连接后焦点自动转移至输出面板 (OUTPUT) 的问题
-
-# v1.0.3
-
-###### 2022/01/05
-
-* `修复` VSCode 焦点位于输出面板 (OUTPUT) 时无法运行脚本的问题
 
 ##### 更多版本历史可参阅
 
