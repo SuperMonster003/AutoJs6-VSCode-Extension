@@ -5,10 +5,10 @@ import * as vscode from 'vscode';
 import * as archiver from 'archiver';
 import * as streamBuffers from 'stream-buffers';
 
-import { Uri } from 'vscode';
-import { FileObserver, FileFilter } from './diff';
-import { awaiter } from './awaiter';
-import { logDebug } from './util';
+import {Uri} from 'vscode';
+import {FileObserver, FileFilter} from './diff';
+import {awaiter} from './awaiter';
+import {logDebug} from './util';
 
 export class ProjectTemplate {
     private readonly outUri: Uri;
@@ -39,7 +39,7 @@ export class ProjectTemplate {
                     const dir = path.dirname(target);
                     fs.existsSync(dir)
                         ? yield fs.promises.copyFile(source, target)
-                        : yield fs.promises.mkdir(dir, { recursive: true });
+                        : yield fs.promises.mkdir(dir, {recursive: true});
                 }
             }.bind(this)));
         }.bind(this));
@@ -54,7 +54,14 @@ export class Project {
 
     constructor(folder: Uri) {
         this.folder = folder;
-        this.config = ProjectConfig.fromJsonFile(path.join(this.folder.fsPath, 'project.json'));
+
+        let projectPath = path.join(this.folder.fsPath, 'project.json');
+        if (!fs.existsSync(projectPath)) {
+            vscode.window.showErrorMessage(`缺少必要的项目配置文件: ${projectPath}`);
+            return Object.create(null);;
+        }
+
+        this.config = ProjectConfig.fromJsonFile(projectPath);
         this.watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder.fsPath, 'project\.json'));
         this.watcher.onDidChange((event) => {
             console.log('file changed: ', event.fsPath);
@@ -98,10 +105,10 @@ export class ProjectObserver {
                 const streamBuffer = new streamBuffers.WritableStreamBuffer();
                 zip.pipe(streamBuffer);
                 fileChanges.modified.forEach((relativePath) => {
-                    zip.append(fs.createReadStream(path.join(this.folder, relativePath)), { name: relativePath });
+                    zip.append(fs.createReadStream(path.join(this.folder, relativePath)), {name: relativePath});
                 });
                 zip.finalize();
-                return new Promise<{ buffer: Buffer, deletedFiles: string[] }>((resolve) => {
+                return new Promise<{buffer: Buffer, deletedFiles: string[]}>((resolve) => {
                     zip.on('finish', () => {
                         streamBuffer.end();
                         resolve({

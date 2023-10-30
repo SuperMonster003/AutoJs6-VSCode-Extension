@@ -12,8 +12,8 @@ import { CONNECTION_TYPE_CLIENT_LAN, CONNECTION_TYPE_SERVER_ADB, CONNECTION_TYPE
 let packageJson: string = fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8');
 let projectPackage = JSON.parse(packageJson);
 
-export const REQUIRED_AUTOJS6_VERSION_NAME = projectPackage.requiredClientVersionName;
-export const REQUIRED_AUTOJS6_VERSION_CODE = parseInt(projectPackage.requiredClientVersionCode) || -1;
+export const REQUIRED_AUTOJS6_VERSION_NAME = projectPackage['requiredClientVersionName'];
+export const REQUIRED_AUTOJS6_VERSION_CODE = parseInt(projectPackage['requiredClientVersionCode']) || -1;
 
 const SERVER_HEADER_SIZE = 16;
 const CLIENT_HEADER_SIZE = 8;
@@ -473,6 +473,6 @@ interface HelloData {
 }
 
 interface CommandParam {
-    '\xa0cmd\xa0': 'viewDocument' | 'connect' | 'disconnectAll' | 'run' | 'runOnDevice' | 'stop' | 'stopAll' | 'rerun' | 'save' | 'saveToDevice' | 'newProject' | 'runProject' | 'saveProject';
+    '\xa0cmd\xa0': 'viewDocument' | 'connect' | 'disconnectAll' | 'run' | 'runOnDevice' | 'stop' | 'stopAll' | 'rerun' | 'save' | 'saveToDevice' | 'newUntitledFile' | 'newProject' | 'runProject' | 'saveProject';
     path: string;
 }

@@ -1,11 +1,11 @@
 {
   "name": "autojs6-vscode-ext",
   "displayName": "AutoJs6 VSCode Extension",
-  "description": "Debugger for AutoJs6",
+  "description": "使用 VSCode 开发 AutoJs6 脚本文件或项目",
 
-  "version": "1.0.6",
-  "requiredClientVersionName": "6.3.3",
-  "requiredClientVersionCode": "2046",
+  "version": "1.0.7",
+  "requiredClientVersionName": "6.4.0",
+  "requiredClientVersionCode": "2146",
 
   "publisher": "003",
   "icon": "assets/images/autojs6_material.png",
@@ -52,6 +52,11 @@
         "category": "AutoJs6"
       },
       {
+        "command": "extension.commandsHierarchy",
+        "title": "命令层级 (Commands Hierarchy)",
+        "category": "AutoJs6"
+      },
+      {
         "command": "extension.runOnDevice",
         "title": "指定设备运行 (Run On Device)",
         "category": "AutoJs6"
@@ -82,6 +87,11 @@
         "category": "AutoJs6"
       },
       {
+        "command": "extension.newUntitledFile",
+        "title": "新建文件 (New File)",
+        "category": "AutoJs6"
+      },
+      {
         "command": "extension.newProject",
         "title": "新建项目 (New Project)",
         "category": "AutoJs6"
@@ -108,6 +118,12 @@
         "command": "extension.run",
         "key": "f6",
         "mac": "f6",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.commandsHierarchy",
+        "key": "f8",
+        "mac": "f8",
         "when": "editorTextFocus"
       },
       {

@@ -10,7 +10,7 @@
 
   <p>
     <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/issues"><img alt="GitHub closed issues" src="https://img.shields.io/github/issues/SuperMonster003/AutoJs6-VSCode-Extension?color=009688"/></a>
-    <a href="https://github.com/SuperMonster003/AutoJs6"><img alt="GitHub AutoJs6 repository" src="https://img.shields.io/badge/auto.js->= 6.3.3-67a91b"/></a>
+    <a href="https://github.com/SuperMonster003/AutoJs6"><img alt="GitHub AutoJs6 repository" src="https://img.shields.io/badge/auto.js->= 6.4.0-67a91b"/></a>
     <a href="https://github.com/topics/javascript"><img alt="GitHub top language" src="https://img.shields.io/github/languages/top/SuperMonster003/AutoJs6-VSCode-Extension?color=eb8031"/></a>
     <br>
     <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/commit/d43a0119b214a17062501ea8a938b13bd97d2028"><img alt="Created" src="https://img.shields.io/date/1638929280?color=2e7d32&label=created"/></a>
@@ -147,6 +147,14 @@
 
 ******
 
+# v1.0.7
+
+###### 2023/10/30
+
+* `修复` 输入 AutoJs6 服务端地址有效且部分匹配历史记录时无法按输入值建立连接的问题
+* `优化` 增加 AutoJs6 项目实例的必要文件检测及提示
+* `优化` 未命名文件保存到设备时自动识别文件类型并添加扩展名
+
 # v1.0.6
 
 ###### 2023/07/21
@@ -164,13 +172,6 @@
 * `优化` 实现 VSCode 插件与 AutoJs6 的双向版本检测并提示异常检测结果
 * `优化` 支持同一设备使用同一方式重复连接的行为检测及提示
 * `优化` 清除连接设备历史记录时增加确认操作提示
-
-# v1.0.4
-
-###### 2022/02/05
-
-* `修复` 当 AutoJs6 单次生成日志长度较大时无法正常拼接的问题  _[`issue #4`](https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/issues/4)_
-* `修复` 新设备建立连接后焦点自动转移至输出面板 (OUTPUT) 的问题
 
 ##### 更多版本历史可参阅
 

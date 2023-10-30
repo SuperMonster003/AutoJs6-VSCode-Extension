@@ -1,27 +1,26 @@
 'use strict';
 
 import * as net from 'net';
+import { AddressInfo } from 'net';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { Disposable, Memento, OutputChannel, QuickInputButton, TextEditor, ThemeIcon, Uri } from 'vscode';
 import * as fs from 'fs';
 import * as util from './util';
+import { logDebug } from './util';
 import * as querystring from 'querystring';
 
 import i18n from './i18n';
 
 import { Adb } from './adb';
-import { Memento, TextEditor, OutputChannel, Uri, Disposable, QuickInputButton, ThemeIcon } from 'vscode';
-import { AddressInfo } from 'net';
 import { awaiter } from './awaiter';
-import { Devices, Device, DeviceInfo, LogData, HTTP_SERVER_PORT } from './device';
+import { Device, DeviceInfo, Devices, HTTP_SERVER_PORT, LogData } from './device';
 import { Project, ProjectTemplate } from './project';
 import { SpawnSyncReturns } from 'child_process';
-import { logDebug } from './util';
 import * as http from 'http';
 import * as url from 'url';
 import EventEmitter = require('events');
 
-let recentDevice = null;
 let extension: Extension = null;
 
 export let connectedServerAdb: Set<string> = new Set();
@@ -53,11 +52,238 @@ const pickButtons: {
     },
 };
 
+const commandsHierarchyPreset = {
+    desc: {
+        script: { zh: '脚本', en: 'Script' },
+        project: { zh: '项目', en: 'Project' },
+        file: { zh: '文件', en: 'File' },
+        currentTask: { zh: '当前任务', en: 'Current Task' },
+        allTasks: { zh: '全部任务', en: 'All Tasks' },
+        viewWithVscBrowser: { zh: '使用 VSCode 内置浏览器', en: 'With VSCode Browser' },
+        viewWithSysBrowser: { zh: '使用操作系统默认浏览器', en: 'With System Browser' },
+    },
+};
+
+const commandsHierarchy: {
+    grade: number | string;
+    desc: string | { zh: string, en?: string };
+    subs?: {
+        grade: number | string;
+        desc: string | { zh: string, en?: string };
+        subs?: {
+            grade: number | string;
+            desc: string | { zh: string, en?: string };
+            action?(): void;
+        }[];
+        action?(): void;
+    }[];
+    action?(): void;
+}[] = [ {
+    grade: 1,
+    desc: { zh: '连接', en: 'Connect' },
+    subs: [ {
+        grade: 1,
+        desc: { zh: '建立连接', en: 'Establish' },
+        subs: [ {
+            grade: 1,
+            desc: `${extension.picker.commands.server} | ${extension.picker.agents.lan}`,
+            action() {
+
+            },
+        }, {
+            grade: 2,
+            desc: `${extension.picker.commands.server} | ${extension.picker.agents.qr}`,
+            action() {
+
+            },
+        }, {
+            grade: 4,
+            desc: `${extension.picker.commands.client} | ${extension.picker.agents.lan}`,
+            action() {
+
+            },
+        }, {
+            grade: 5,
+            desc: `${extension.picker.commands.client} | ${extension.picker.agents.adb}`,
+            action() {
+
+            },
+        } ],
+    }, {
+        grade: 0,
+        desc: { zh: '断开连接', en: 'Disconnect' },
+        subs: [ {
+            grade: 1,
+            desc: { zh: '全部设备', en: 'All Devices' },
+            action() {
+
+            },
+        }, {
+            grade: 2,
+            desc: { zh: '指定设备', en: 'Specified Devices' },
+            action() {
+
+            },
+        } ],
+    } ],
+}, {
+    grade: 6,
+    desc: { zh: '运行', en: 'Run' },
+    subs: [ {
+        grade: 1,
+        desc: commandsHierarchyPreset.desc.script,
+        subs: [ {
+            grade: 1,
+            desc: { zh: '全部设备', en: 'All Devices' },
+            action() {
+
+            },
+        }, {
+            grade: 2,
+            desc: { zh: '指定设备', en: 'Specified Devices' },
+            action() {
+
+            },
+        } ],
+    }, {
+        grade: 2,
+        desc: commandsHierarchyPreset.desc.project,
+        subs: [ {
+            grade: 1,
+            desc: { zh: '全部设备', en: 'All Devices' },
+            action() {
+
+            },
+        }, {
+            grade: 2,
+            desc: { zh: '指定设备', en: 'Specified Devices' },
+            action() {
+
+            },
+        } ],
+    } ],
+}, {
+    grade: 5,
+    desc: { zh: '保存', en: 'Save' },
+    subs: [ {
+        grade: 1,
+        desc: commandsHierarchyPreset.desc.script,
+        subs: [ {
+            grade: 1,
+            desc: { zh: '全部设备', en: 'All Devices' },
+            action() {
+
+            },
+        }, {
+            grade: 2,
+            desc: { zh: '指定设备', en: 'Specified Devices' },
+            action() {
+
+            },
+        } ],
+    }, {
+        grade: 2,
+        desc: commandsHierarchyPreset.desc.project,
+        subs: [ {
+            grade: 1,
+            desc: { zh: '全部设备', en: 'All Devices' },
+            action() {
+
+            },
+        }, {
+            grade: 2,
+            desc: { zh: '指定设备', en: 'Specified Devices' },
+            action() {
+
+            },
+        } ],
+    } ],
+}, {
+    grade: 0,
+    desc: { zh: '停止', en: 'Stop' },
+    subs: [ {
+        grade: 1,
+        desc: commandsHierarchyPreset.desc.currentTask,
+        subs: [ {
+            grade: 1,
+            desc: { zh: '全部设备', en: 'All Devices' },
+            action() {
+
+            },
+        }, {
+            grade: 2,
+            desc: { zh: '指定设备', en: 'Specified Devices' },
+            action() {
+
+            },
+        } ],
+    }, {
+        grade: 2,
+        desc: commandsHierarchyPreset.desc.allTasks,
+        subs: [ {
+            grade: 1,
+            desc: { zh: '全部设备', en: 'All Devices' },
+            action() {
+
+            },
+        }, {
+            grade: 2,
+            desc: { zh: '指定设备', en: 'Specified Devices' },
+            action() {
+
+            },
+        } ],
+    } ],
+}, {
+    grade: 1,
+    desc: { zh: '新建', en: 'New' },
+    subs: [ {
+        grade: 1,
+        desc: commandsHierarchyPreset.desc.file,
+        action() {
+
+        },
+    }, {
+        grade: 2,
+        desc: commandsHierarchyPreset.desc.project,
+        action() {
+
+        },
+    } ],
+}, {
+    grade: 3,
+    desc: { zh: '扩展', en: 'Extension' },
+    subs: [ {
+        grade: 1,
+        desc: { zh: '查看在线文档', en: 'View Online Document' },
+        subs: [ {
+            grade: 1,
+            desc: commandsHierarchyPreset.desc.viewWithVscBrowser,
+            action() {
+
+            },
+        }, {
+            grade: 2,
+            desc: commandsHierarchyPreset.desc.viewWithSysBrowser,
+            action() {
+
+            },
+        } ],
+    } ],
+}, {
+    grade: '?',
+    desc: { zh: '查看全部命令层级', en: 'View All Commands Hierarchy' },
+    action() {
+
+    },
+} ];
+
 // @Reference to AutoX by SuperMonster003 on Jun 11, 2023.
 class AJHttpServer extends EventEmitter {
     public isHttpServerStarted = false;
+    public port: number;
+
     private httpServer: http.Server;
-    private port: number;
 
     constructor(port: number) {
         super();
@@ -107,28 +333,36 @@ export class Extension {
             connect: '连接',
             clear: '清理',
             record: '记录',
+            optional: '可选',
+            removeOperation(s: string) {
+                const regexPrefixOperation = /^\[ [\u4e00-\u9fff]+ ] - /;
+                return s.replace(regexPrefixOperation, '');
+            },
         },
         commands: {
-            'empty': '',
-            'c/s': 'AutoJs6 (客户端) > VSCode (服务端)',
-            's/c': 'AutoJs6 (服务端) < VSCode (客户端)',
-            'record': '本地 IP 地址记录',
+            empty: '',
+            server: '服务端模式 (Server)',
+            client: '客户端模式 (Client)',
+            record: 'IP 地址记录 (IP Address Records)',
         },
         agents: {
-            'lan': '局域网',
-            'adb/usb': 'ADB (USB)',
+            lan: '局域网 (LAN)',
+            adb: '安卓调试桥 (ADB)',
+            qr: '二维码 (QR Code)',
         },
     };
-    private readonly picks: { [prop in string]: vscode.QuickPickItem } = {
-        ajClientLan: this.newPicker('connect', 'c/s', 'lan', 'AutoJs6 作为客户端主动连接 VSCode (使用 IP 地址)'),
-        ajServerLan: this.newPicker('connect', 's/c', 'lan', 'VSCode 主动连接作为服务端的 AutoJs6 (使用 IP 地址)'),
-        ajServerAdb: this.newPicker('connect', 's/c', 'adb/usb', 'VSCode 主动连接作为服务端的 AutoJs6 (使用 USB 线缆)'),
-        recordClear: this.newPicker('clear', 'record', null, '清除保存在本地的全部 IP 地址记录'),
-        recordPrefix: this.newPicker('record', 'empty', null, 'VSCode 使用 IP 地址 %s 主动连接作为服务端的 AutoJs6'),
+    private readonly picks = {
+        ajClientLan: this.newPicker('connect', 's/c', 'lan', 'AutoJs6 作为客户端连接至 VSCode 服务端 (使用 IP 地址)'),
+        ajClientQr: this.newPicker('connect', 's/c', 'lan', 'AutoJs6 作为客户端连接至 VSCode 服务端 (使用 二维码)'),
+        ajServerLan: this.newPicker('connect', 'c/s', 'lan', 'VSCode 作为客户端连接至 AutoJs6 服务端 (使用 IP 地址)'),
+        ajServerAdb: this.newPicker('connect', 'c/s', 'adb', 'VSCode 作为客户端连接至 AutoJs6 服务端 (使用 ADB)'),
+        recordClear: this.newPicker('clear', 'record', null, '清除保存在本地的全部客户端 IP 地址记录'),
+        recordPrefix: this.newPicker('record', 'empty', null, 'VSCode 作为客户端使用 IP 地址 %s 连接至 AutoJs6 服务端'),
     };
     static readonly commands: Array<keyof Extension> = [
         'viewDocument', 'connect', 'disconnectAll', 'run', 'runOnDevice', 'stop',
-        'stopAll', 'rerun', 'save', 'saveToDevice', 'newProject', 'runProject', 'saveProject',
+        'stopAll', 'rerun', 'save', 'saveToDevice', 'newUntitledFile',
+        'newProject', 'runProject', 'saveProject', 'commandsHierarchy',
     ];
 
     private adb: Adb;
@@ -152,6 +386,10 @@ export class Extension {
         vscode.window.showInformationMessage(`在 AutoJs6 侧拉菜单开启客户端模式并连接至 ${util.getNicAddress()}`);
     }
 
+    private static showLocalQrCode() {
+
+    }
+
     private newPicker(operation: string, command: string, agent: string, detail: string): vscode.QuickPickItem {
         let label = `[ ${this.picker.operations[operation]} ]`;
 
@@ -166,38 +404,101 @@ export class Extension {
         return { label, detail };
     }
 
-    private runFile(url?) {
-        this.runFileOn(this.client, url);
+    private runFile(url?: string) {
+        this.runFileOn(this.client.devices, url);
     }
 
-    private runFileOn(client: Devices, url?) {
-        if (!client.hasDevices()) {
+    private runFileOn(devices: Device[], url?: string) {
+        if (devices.length === 0) {
             vscode.window.showErrorMessage('未发现已连接的设备');
             return;
         }
-        let fileName: string;
-        let script: string;
         if (url == null) {
             let editor = this.lastActiveEditor;
             if (!editor) {
                 vscode.window.showErrorMessage('需在正在编辑的文件窗口中使用运行命令');
                 return;
             }
-            fileName = editor.document.fileName;
-            script = editor.document.getText();
-        } else {
-            try {
-                fileName = Uri.parse(url).fsPath;
-                script = fs.readFileSync(fileName, 'utf8');
-            } catch (error) {
-                logDebug(error);
+            devices.forEach((device) => {
+                device.sendCommand('run', {
+                    id: editor.document.fileName,
+                    name: this.getEditorFileName(editor),
+                    script: editor.document.getText(),
+                });
+            });
+            return;
+        }
+        try {
+            let fileName = Uri.parse(url).fsPath;
+            let script = fs.readFileSync(fileName, 'utf8');
+            devices.forEach((device) => {
+                device.sendCommand('run', {
+                    id: fileName,
+                    name: fileName,
+                    script: script,
+                });
+            });
+        } catch (error) {
+            logDebug(error);
+        }
+    }
+
+    private getEditorFileName(editor: vscode.TextEditor) {
+        let fileName = editor.document.fileName;
+        if (editor.document.isUntitled) {
+            // noinspection SpellCheckingInspection
+            switch (editor.document.languageId) {
+                case 'bat':
+                    return `${fileName}.bat`;
+                case 'c':
+                    return `${fileName}.c`;
+                case 'css':
+                    return `${fileName}.css`;
+                case 'go':
+                    return `${fileName}.go`;
+                case 'html':
+                    return `${fileName}.html`;
+                case 'java':
+                    return `${fileName}.java`;
+                case 'javascript':
+                    return `${fileName}.js`;
+                case 'javascriptreact':
+                    return `${fileName}.jsx`;
+                case 'json':
+                    return `${fileName}.json`;
+                case 'lua':
+                    return `${fileName}.lua`;
+                case 'markdown':
+                    return `${fileName}.md`;
+                case 'php':
+                    return `${fileName}.php`;
+                case 'plaintext':
+                    return `${fileName}.txt`;
+                case 'powershell':
+                    return `${fileName}.ps`;
+                case 'python':
+                    return `${fileName}.py`;
+                case 'r':
+                    return `${fileName}.r`;
+                case 'shellscript':
+                    return `${fileName}.sh`;
+                case 'sql':
+                    return `${fileName}.sql`;
+                case 'typescript':
+                    return `${fileName}.ts`;
+                case 'typescriptreact':
+                    return `${fileName}.tsx`;
+                case 'vue':
+                    return `${fileName}.vue`;
+                case 'xml':
+                    return `${fileName}.xml`;
+                case 'xsl':
+                    return `${fileName}.xsl`;
+                case 'yaml':
+                    return `${fileName}.yaml`;
             }
         }
-        client.sendCommand('run', {
-            id: fileName,
-            name: fileName,
-            script: script,
-        });
+        return fileName;
     }
 
     private initActiveEditor() {
@@ -323,7 +624,7 @@ export class Extension {
         throw Error(`Invalid command: ${command}`);
     }
 
-    private matchDevice(dev): DeviceInfo {
+    private matchDevice(dev: string): DeviceInfo {
         let matched = /(\S+)\s+device\s(.+)/g.exec(dev);
         if (!matched || matched.length !== 3) {
             return null;
@@ -349,25 +650,25 @@ export class Extension {
         return o;
     }
 
-    private selectDevice(callback) {
-        let devices = this.client.devices;
-        if (devices.length === 0) {
+    private selectDevices(callback: (devices: Device[]) => void) {
+        if (!this.client.hasDevices()) {
             vscode.window.showErrorMessage('未发现已连接的设备');
             return false;
         }
-        if (recentDevice) {
-            let idx = devices.indexOf(recentDevice);
-            if (idx > 0) {
-                devices = devices.slice(0);
-                devices[idx] = devices[0];
-                devices[0] = recentDevice;
-            }
-        }
-        let devs = devices.map(t => t.toString());
-        vscode.window.showQuickPick(devs).then((idx) => {
-            let dev = devices[devs.indexOf(idx)];
-            recentDevice = dev;
-            callback(dev);
+        let devices = this.client.devices;
+        // if (recentDevice) {
+        //     let idx = devices.indexOf(recentDevice);
+        //     if (idx > 0) {
+        //         devices = devices.slice(0);
+        //         devices[idx] = devices[0];
+        //         devices[0] = recentDevice;
+        //         recentDevice = null
+        //     }
+        // }
+        vscode.window.showQuickPick(devices.map(dev => dev.toString()), {
+            canPickMany: true,
+        }).then((selected) => {
+            callback(devices.filter(dev => selected.includes(dev.toString())));
         });
         return true;
     }
@@ -387,11 +688,19 @@ export class Extension {
         }
         if (!this.client.project || this.client.project.folder !== folder) {
             this.client.project && this.client.project.dispose();
-            this.client.project = new Project(folder);
+            let project = new Project(folder);
+            if (Object.getPrototypeOf(project) === null) {
+                return;
+            }
+            this.client.project = project;
         }
         if (!this.client.sendProjectCommand(folder.fsPath, command)) {
             vscode.window.showErrorMessage('未发现已连接的设备');
         }
+    }
+
+    private showCommandHierarchy() {
+        // commandsHierarchy;
     }
 
     private connectByAdb() {
@@ -418,12 +727,10 @@ export class Extension {
             let ports = [ {
                 src: yield this.findAvailPorts(),
                 dst: Device.defaultClientPort,
-            },
-                {
-                    src: yield this.findAvailPorts(),
-                    dst: Device.defaultAdbServerPort,
-                },
-            ];
+            }, {
+                src: yield this.findAvailPorts(),
+                dst: Device.defaultAdbServerPort,
+            } ];
 
             try {
                 logDebug(`adb device id: ${dev.id}`);
@@ -462,10 +769,10 @@ export class Extension {
         return map;
     }
 
-    private findAvailPorts() {
+    findAvailPorts() {
         let findPorts = function () {
             class Err extends Error {
-                constructor(o) {
+                constructor(o: string) {
                     super(o + ' is locked');
                 }
             }
@@ -475,7 +782,7 @@ export class Extension {
                 young: new Set,
             };
 
-            const parsePort = (port: number) => {
+            const parsePort = (port: { port: number }) => {
                 return new Promise((resolve, reject) => {
                     let server = net.createServer();
                     server.unref();
@@ -487,37 +794,33 @@ export class Extension {
                 });
             };
 
-            let itv_id;
+            let itvId: NodeJS.Timeout;
 
-            return async (port_info?) => {
-                let ports;
-                if (port_info) {
-                    ports = typeof port_info.port === 'number' ? [ port_info.port ] : port_info.port;
-                }
-                if (itv_id === undefined) {
-                    itv_id = setInterval(() => {
+            return async (portInfo?: { port: number | number[] }) => {
+                if (itvId === undefined) {
+                    itvId = setInterval(() => {
                         cache.old = cache.young;
                         cache.young = new Set;
                     }, 15e3);
-                    itv_id.unref && itv_id.unref();
+                    itvId.unref && itvId.unref();
                 }
                 for (let port of function* $iiFe() {
-                    if (ports) {
-                        yield* ports;
+                    if (portInfo) {
+                        yield* (typeof portInfo.port === 'number' ? [ portInfo.port ] : portInfo.port);
                     }
                     yield 0;
                 }()) {
                     try {
-                        let parsed_port = await parsePort({ ...port_info, port: port });
-                        while (cache.old.has(parsed_port) || cache.young.has(parsed_port)) {
+                        let parsedPort = await parsePort({ ...portInfo, port: port });
+                        while (cache.old.has(parsedPort) || cache.young.has(parsedPort)) {
                             if (port !== 0) {
                                 // noinspection ExceptionCaughtLocallyJS
-                                throw new Err(port);
+                                throw new Err(String(port));
                             }
-                            parsed_port = await parsePort({ ...port_info, port: port });
+                            parsedPort = await parsePort({ ...portInfo, port: port });
                         }
-                        cache.young.add(parsed_port);
-                        return parsed_port;
+                        cache.young.add(parsedPort);
+                        return parsedPort;
                     } catch (t) {
                         if (![ 'EADDRINUSE', 'EACCES' ].includes(t.code) && !(t instanceof Err)) {
                             throw t;
@@ -531,7 +834,7 @@ export class Extension {
         return (this.findAvailPorts = findPorts.call(this))();
     }
 
-    private onAdbDeviceConnectTimeout(device) {
+    onAdbDeviceConnectTimeout(device: DeviceInfo) {
         let res = this.adb.execOrThrow([
             '-s', device.id, 'shell', 'content', 'query',
             '--uri', 'content://org.autojs.autojs.debug.provider/debug-server',
@@ -550,17 +853,6 @@ export class Extension {
                 vscode.window.showErrorMessage(errEnsureServerModeOn);
             }
         }
-    }
-
-    private connectToNewDevice() {
-        vscode.window.showInputBox({ prompt: '' }).then((input) => {
-            if (input) {
-                let port = Device.defaultClientPort;
-                this.client.connectTo(input, port, CONNECTION_TYPE_SERVER_LAN)
-                    .then(() => logDebug(`connected to ${input}:${port}`))
-                    .catch(() => vscode.window.showErrorMessage(`连接 AutoJs6 服务端失败 (${input}) (AutoJs6 需启用服务端模式)`));
-            }
-        });
     }
 
     connect() {
@@ -603,11 +895,19 @@ export class Extension {
             }
             return o;
         });
-        const commands = [ this.picks.ajClientLan, this.picks.ajServerLan, this.picks.ajServerAdb ];
+        const commands = [
+            this.picks.ajClientLan,
+            // this.picks.ajClientQr,
+            this.picks.ajServerLan,
+            this.picks.ajServerAdb,
+        ];
 
         this.showQuickPickForConnectionHomepage(commands).then((cmd) => {
             switch (cmd) {
                 case undefined:
+                    break;
+                case this.picks.ajClientQr.label:
+                    Extension.showLocalQrCode();
                     break;
                 case this.picks.ajClientLan.label:
                     Extension.connectToLocalHint();
@@ -639,10 +939,9 @@ export class Extension {
     }
 
     connectToServerLan(cmd: any) {
-        const prefixRecord = `[ ${this.picker.operations.record} ] - `;
         if (typeof cmd === 'string') {
             let port = Device.defaultClientPort;
-            let host = cmd.trim().replace(prefixRecord, '');
+            let host = this.picker.operations.removeOperation(cmd.trim());
             if (host.match(regexIpAddress) !== null) {
                 if (host.includes(':')) {
                     let split = host.split(':');
@@ -652,12 +951,26 @@ export class Extension {
                     }
                     host = split[0];
                 }
+                vscode.window.showInformationMessage(`正在连接至 AutoJs6 服务端 (${host})...`);
                 this.client.connectTo(host, port, CONNECTION_TYPE_SERVER_LAN).catch((e) => {
                     logDebug(e);
-                    vscode.window.showErrorMessage(`连接 AutoJs6 服务端失败 (${host}) (AutoJs6 需启用服务端模式)`);
+                    vscode.window.showErrorMessage(`无法连接至 AutoJs6 服务端 (${host})`, '查看解决方案').then((choice) => {
+                        if (choice) {
+                            const header = 'AutoJs6 服务端连接诊断';
+                            vscode.window.showInformationMessage(header, {
+                                detail: [
+                                    `检查 AutoJs6 主页侧拉抽屉是否已开启 "服务端模式"`,
+                                    `检查两端设备是否位于同一局域网`,
+                                    `检查 VSCode 所在设备的防火墙是否允许 ${port} 端口通信`,
+                                    `尝试使用其他方式 (如 ADB 等) 建立连接`,
+                                ].map(s => `- ${s}`).join('\n'),
+                                modal: true,
+                            });
+                        }
+                    });
                 });
             } else {
-                vscode.window.showErrorMessage(`连接 AutoJs6 服务端失败, 无法解析主机地址 ${cmd}`);
+                vscode.window.showErrorMessage(`连接 AutoJs6 服务端失败, 无法解析地址 ${cmd}`);
             }
         }
     }
@@ -665,7 +978,7 @@ export class Extension {
     private async showQuickPickForConnectionHomepage<T extends vscode.QuickPickItem>(commands: T[]) {
         const disposables: Disposable[] = [];
         try {
-            return await new Promise<string | T | T[] | undefined>((resolve, reject) => {
+            return await new Promise<string | T | T[] | undefined>((resolve) => {
                 const input = vscode.window.createQuickPick();
                 input.title = `本机 IP: ${util.getNicAddress()}`;
                 input.placeholder = DEFAULT_QUICK_PICK_PLACEHOLDER;
@@ -717,7 +1030,7 @@ export class Extension {
     private async showAlternativePick(title: string) {
         const disposables: Disposable[] = [];
         try {
-            return await new Promise<string | undefined>((resolve, reject) => {
+            return await new Promise<string | undefined>((resolve) => {
                 const input = vscode.window.createQuickPick();
                 input.title = title;
                 input.placeholder = DEFAULT_QUICK_PICK_PLACEHOLDER;
@@ -752,13 +1065,13 @@ export class Extension {
         }
     }
 
-    private async showQuickPickForAjServerLanConnecting<T extends vscode.QuickPickItem>(commands: T[]) {
+    private async showQuickPickForAjServerLanConnecting<T extends vscode.QuickPickItem>(commands: T[], options: { title?: string, placeholder?: string } = {}) {
         const disposables: Disposable[] = [];
         try {
-            return await new Promise<string | T | T[] | undefined>((resolve, reject) => {
+            return await new Promise<string | T | T[] | undefined | Promise<any>>((resolve) => {
                 const input = vscode.window.createQuickPick();
-                input.title = `连接到 AutoJs6 服务端`;
-                input.placeholder = `输入或选择 AutoJs6 服务端 IP 地址, 按回车 (Enter) 键建立连接`;
+                input.title = options.title || `连接到 AutoJs6 服务端`;
+                input.placeholder = options.placeholder || `输入或选择 AutoJs6 服务端 IP 地址, 按回车 (Enter) 键建立连接`;
                 input.items = commands;
                 input.buttons = [
                     ...[],
@@ -769,12 +1082,25 @@ export class Extension {
 
                 disposables.push(
                     input.onDidAccept(() => {
-                        this.connectToServerLan(input.value);
+                        resolve(input.value);
                         input.hide();
                     }),
                     input.onDidChangeSelection((items) => {
                         const item = items[0];
-                        resolve(item.label);
+                        const pureLabel = this.picker.operations.removeOperation(item.label);
+                        const isConflicted = regexIpAddress.test(input.value)
+                            && pureLabel.includes(input.value)
+                            && pureLabel !== input.value;
+                        if (isConflicted) {
+                            const prefixOptional = `[ ${this.picker.operations.optional} ] - `;
+                            const optionalItem = { label: `${prefixOptional}${input.value}` };
+                            resolve(this.showQuickPickForAjServerLanConnecting([ optionalItem, item ], {
+                                title: `IP 地址出现歧义, 需进一步确认`,
+                                placeholder: `选择一个 IP 地址, 按回车 (Enter) 键建立连接`,
+                            }));
+                        } else {
+                            resolve(item.label);
+                        }
                         input.hide();
                     }),
                     input.onDidHide(() => {
@@ -797,7 +1123,7 @@ export class Extension {
     private async showQuickPickForAjServerAdbConnecting<T extends vscode.QuickPickItem>(commands: T[]) {
         const disposables: Disposable[] = [];
         try {
-            return await new Promise<string | T | T[] | undefined>((resolve, reject) => {
+            return await new Promise<string | T | T[] | undefined>((resolve) => {
                 const input = vscode.window.createQuickPick();
                 input.title = `连接到 AutoJs6 服务端`;
                 input.placeholder = `输入或选择需要连接的设备, 按回车 (Enter) 键建立连接`;
@@ -846,7 +1172,7 @@ export class Extension {
         // vscode.window.showInformationMessage('All connections to AutoJs6 disconnected');
     }
 
-    run(url?) {
+    run(url?: string) {
         this.runFile(url);
     }
 
@@ -860,37 +1186,43 @@ export class Extension {
         this.client.sendCommand('stopAll');
     }
 
-    rerunProject(url?) {
+    rerunProject(url?: string) {
         this.stopAll();
         setTimeout(() => this.runProject(url), 480);
     }
 
-    rerun(url?) {
+    rerun(url?: string) {
         this.stop();
         this.run(url);
     }
 
     runOnDevice() {
-        this.selectDevice(dev => this.runFileOn(dev));
+        this.selectDevices((devices: Device[]) => this.runFileOn(devices));
     }
 
     save() {
-        this.saveTo(this.client);
+        this.saveTo(this.client.devices);
     }
 
     saveToDevice() {
-        this.selectDevice(dev => this.saveTo(dev));
+        this.selectDevices((devices: Device[]) => this.saveTo(devices));
     }
 
-    saveTo(devices: Devices) {
+    saveTo(devices: Device[]) {
         let editor = vscode.window.activeTextEditor;
         if (editor) {
-            devices.sendCommand('save', {
-                id: editor.document.fileName,
-                name: editor.document.fileName,
-                script: editor.document.getText(),
+            devices.forEach((device) => {
+                device.sendCommand('save', {
+                    id: editor.document.fileName,
+                    name: this.getEditorFileName(editor),
+                    script: editor.document.getText(),
+                });
             });
         }
+    }
+
+    newUntitledFile() {
+        vscode.commands.executeCommand('workbench.action.files.newUntitledFile');
     }
 
     newProject() {
@@ -911,12 +1243,16 @@ export class Extension {
         });
     }
 
-    runProject(url?) {
+    runProject(url?: string) {
         this.sendProjectCommand('run_project', url);
     }
 
-    saveProject(url?) {
+    saveProject(url?: string) {
         this.sendProjectCommand('save_project', url);
+    }
+
+    commandsHierarchy() {
+        this.showCommandHierarchy();
     }
 }
 
@@ -929,7 +1265,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 export type ProjectCommands = 'run_project' | 'save_project';
 
-export let httpServer = new AJHttpServer(HTTP_SERVER_PORT)
+new AJHttpServer(HTTP_SERVER_PORT)
     .on('cmd', (cmd: keyof Extension, ...params) => {
         logDebug(`Received cmd: ${cmd}`);
         switch (cmd) {
@@ -949,8 +1285,3 @@ export let httpServer = new AJHttpServer(HTTP_SERVER_PORT)
     .on('error', (e) => {
         logDebug(`HTTP server error: ${e}`);
     });
-
-type AJHttpServerParamList = {
-    cmd: string;
-    path: string;
-}
