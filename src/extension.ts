@@ -52,6 +52,30 @@ const pickButtons: {
     },
 };
 
+const picker = {
+    operations: {
+        connect: '连接',
+        clear: '清理',
+        record: '记录',
+        optional: '可选',
+        removeOperation(s: string) {
+            const regexPrefixOperation = /^\[ [\u4e00-\u9fff]+ ] - /;
+            return s.replace(regexPrefixOperation, '');
+        },
+    },
+    commands: {
+        empty: '',
+        server: '服务端模式 (Server)',
+        client: '客户端模式 (Client)',
+        record: 'IP 地址记录 (IP Address Records)',
+    },
+    agents: {
+        lan: '局域网 (LAN)',
+        adb: '安卓调试桥 (ADB)',
+        qr: '二维码 (QR Code)',
+    },
+};
+
 const commandsHierarchyPreset = {
     desc: {
         script: { zh: '脚本', en: 'Script' },
@@ -86,25 +110,25 @@ const commandsHierarchy: {
         desc: { zh: '建立连接', en: 'Establish' },
         subs: [ {
             grade: 1,
-            desc: `${extension.picker.commands.server} | ${extension.picker.agents.lan}`,
+            desc: `${picker.commands.server} | ${picker.agents.lan}`,
             action() {
 
             },
         }, {
             grade: 2,
-            desc: `${extension.picker.commands.server} | ${extension.picker.agents.qr}`,
+            desc: `${picker.commands.server} | ${picker.agents.qr}`,
             action() {
 
             },
         }, {
             grade: 4,
-            desc: `${extension.picker.commands.client} | ${extension.picker.agents.lan}`,
+            desc: `${picker.commands.client} | ${picker.agents.lan}`,
             action() {
 
             },
         }, {
             grade: 5,
-            desc: `${extension.picker.commands.client} | ${extension.picker.agents.adb}`,
+            desc: `${picker.commands.client} | ${picker.agents.adb}`,
             action() {
 
             },
@@ -328,34 +352,11 @@ class AJHttpServer extends EventEmitter {
 export class Extension {
     private readonly context: vscode.ExtensionContext;
     private readonly storageKey: string = 'autojs6.devices';
-    readonly picker = {
-        operations: {
-            connect: '连接',
-            clear: '清理',
-            record: '记录',
-            optional: '可选',
-            removeOperation(s: string) {
-                const regexPrefixOperation = /^\[ [\u4e00-\u9fff]+ ] - /;
-                return s.replace(regexPrefixOperation, '');
-            },
-        },
-        commands: {
-            empty: '',
-            server: '服务端模式 (Server)',
-            client: '客户端模式 (Client)',
-            record: 'IP 地址记录 (IP Address Records)',
-        },
-        agents: {
-            lan: '局域网 (LAN)',
-            adb: '安卓调试桥 (ADB)',
-            qr: '二维码 (QR Code)',
-        },
-    };
     private readonly picks = {
-        ajClientLan: this.newPicker('connect', 's/c', 'lan', 'AutoJs6 作为客户端连接至 VSCode 服务端 (使用 IP 地址)'),
-        ajClientQr: this.newPicker('connect', 's/c', 'lan', 'AutoJs6 作为客户端连接至 VSCode 服务端 (使用 二维码)'),
-        ajServerLan: this.newPicker('connect', 'c/s', 'lan', 'VSCode 作为客户端连接至 AutoJs6 服务端 (使用 IP 地址)'),
-        ajServerAdb: this.newPicker('connect', 'c/s', 'adb', 'VSCode 作为客户端连接至 AutoJs6 服务端 (使用 ADB)'),
+        ajClientLan: this.newPicker('connect', 'server', 'lan', 'AutoJs6 作为客户端连接至 VSCode 服务端 (使用 IP 地址)'),
+        ajClientQr: this.newPicker('connect', 'server', 'lan', 'AutoJs6 作为客户端连接至 VSCode 服务端 (使用 二维码)'),
+        ajServerLan: this.newPicker('connect', 'client', 'lan', 'VSCode 作为客户端连接至 AutoJs6 服务端 (使用 IP 地址)'),
+        ajServerAdb: this.newPicker('connect', 'client', 'adb', 'VSCode 作为客户端连接至 AutoJs6 服务端 (使用 ADB)'),
         recordClear: this.newPicker('clear', 'record', null, '清除保存在本地的全部客户端 IP 地址记录'),
         recordPrefix: this.newPicker('record', 'empty', null, 'VSCode 作为客户端使用 IP 地址 %s 连接至 AutoJs6 服务端'),
     };
@@ -391,14 +392,14 @@ export class Extension {
     }
 
     private newPicker(operation: string, command: string, agent: string, detail: string): vscode.QuickPickItem {
-        let label = `[ ${this.picker.operations[operation]} ]`;
+        let label = `[ ${picker.operations[operation]} ]`;
 
         if (typeof command === 'string') {
-            label += ` - ${this.picker.commands[command]}`;
+            label += ` - ${picker.commands[command]}`;
         }
 
         if (typeof agent === 'string') {
-            label += ` | ${this.picker.agents[agent]}`;
+            label += ` | ${picker.agents[agent]}`;
         }
 
         return { label, detail };
@@ -525,7 +526,7 @@ export class Extension {
                 logDebug('storage data', storageDataRaw);
                 let isUpdated = false;
 
-                const prefixRecord = `[ ${this.picker.operations.record} ] - `;
+                const prefixRecord = `[ ${picker.operations.record} ] - `;
 
                 for (let i = 0; i < storageDataRaw.length; i += 1) {
                     let data = storageDataRaw[i];
@@ -700,7 +701,7 @@ export class Extension {
     }
 
     private showCommandHierarchy() {
-        // commandsHierarchy;
+        vscode.window.showInformationMessage('将在后续版本实现当前功能');
     }
 
     private connectByAdb() {
@@ -856,7 +857,7 @@ export class Extension {
     }
 
     connect() {
-        const prefixRecord = `[ ${this.picker.operations.record} ] - `;
+        const prefixRecord = `[ ${picker.operations.record} ] - `;
         let ipAddressRecords = this.storage.get(this.storageKey, []);
 
         let isUpdated = false;
@@ -906,11 +907,11 @@ export class Extension {
             switch (cmd) {
                 case undefined:
                     break;
-                case this.picks.ajClientQr.label:
-                    Extension.showLocalQrCode();
-                    break;
                 case this.picks.ajClientLan.label:
                     Extension.connectToLocalHint();
+                    break;
+                case this.picks.ajClientQr.label:
+                    Extension.showLocalQrCode();
                     break;
                 case this.picks.ajServerLan.label:
                     const records = ipAddressRecords.concat(ipAddressRecords.length > 0 ? this.picks.recordClear : []);
@@ -941,7 +942,7 @@ export class Extension {
     connectToServerLan(cmd: any) {
         if (typeof cmd === 'string') {
             let port = Device.defaultClientPort;
-            let host = this.picker.operations.removeOperation(cmd.trim());
+            let host = picker.operations.removeOperation(cmd.trim());
             if (host.match(regexIpAddress) !== null) {
                 if (host.includes(':')) {
                     let split = host.split(':');
@@ -1087,12 +1088,12 @@ export class Extension {
                     }),
                     input.onDidChangeSelection((items) => {
                         const item = items[0];
-                        const pureLabel = this.picker.operations.removeOperation(item.label);
+                        const pureLabel = picker.operations.removeOperation(item.label);
                         const isConflicted = regexIpAddress.test(input.value)
                             && pureLabel.includes(input.value)
                             && pureLabel !== input.value;
                         if (isConflicted) {
-                            const prefixOptional = `[ ${this.picker.operations.optional} ] - `;
+                            const prefixOptional = `[ ${picker.operations.optional} ] - `;
                             const optionalItem = { label: `${prefixOptional}${input.value}` };
                             resolve(this.showQuickPickForAjServerLanConnecting([ optionalItem, item ], {
                                 title: `IP 地址出现歧义, 需进一步确认`,

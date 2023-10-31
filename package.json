@@ -3,7 +3,7 @@
   "displayName": "AutoJs6 VSCode Extension",
   "description": "使用 VSCode 开发 AutoJs6 脚本文件或项目",
 
-  "version": "1.0.7",
+  "version": "1.0.8",
   "requiredClientVersionName": "6.4.0",
   "requiredClientVersionCode": "2146",
 
