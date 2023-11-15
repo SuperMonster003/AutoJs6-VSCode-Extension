@@ -31,7 +31,8 @@
     // "rootDirs": [],                                   /* Allow multiple folders to be treated as one when resolving modules. */
     "typeRoots": [
       "./node_modules/@types",
-      "./node_modules/@autojs"
+      "./node_modules/@autojs",
+      "./node_modules/@sm003/autojs6-dts/declarations"
     ], /* Specify multiple folders that act like `./node_modules/@types`. */
     // "types": [],                                      /* Specify type package names to be included without being referenced in a source file. */
     // "allowUmdGlobalAccess": true,                     /* Allow accessing UMD globals from modules. */

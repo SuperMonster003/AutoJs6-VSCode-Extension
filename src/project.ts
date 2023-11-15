@@ -37,9 +37,10 @@ export class ProjectTemplate {
                     this.copyDirIfNotExists(source, target);
                 } else if (!fs.existsSync(target)) {
                     const dir = path.dirname(target);
-                    fs.existsSync(dir)
-                        ? yield fs.promises.copyFile(source, target)
-                        : yield fs.promises.mkdir(dir, {recursive: true});
+                    if (!fs.existsSync(dir)) {
+                        yield fs.promises.mkdir(dir, {recursive: true});
+                    }
+                    yield fs.promises.copyFile(source, target)
                 }
             }.bind(this)));
         }.bind(this));

@@ -136,6 +136,7 @@
     - 弹出设备菜单并在指定保存 VSCode 对应脚本的设备
 - 新建项目 (New Project) `[ CTRL+ALT+6 N ]`
     - 选择 (或创建后选择) 一个空文件夹用于新建 AutoJs6 项目
+    - 新建项目后执行 `npm install` 或 `npm run dts` 可完成声明文件部署
 - 运行项目 (Run Project) `[ CTRL+ALT+6 R / Alt+F6 ]`
     - 运行一个 AutoJs6 项目
 - 保存项目到设备 (Save Project) `[ CTRL+ALT+6 S ]`
@@ -146,6 +147,14 @@
 ### 版本历史 (Release Notes)
 
 ******
+
+# v1.0.9
+
+###### 2023/11/15
+
+* `修复` 执行 npm install 可能出现 Not Found 的问题 _[`issue #1`](https://github.com/SuperMonster003/AutoJs6-TypeScript-Declarations/issues/1#issuecomment-1758808581)_
+* `修复` 新建项目时存在目录时可能出现文件遗漏复制的问题
+* `优化` 新建项目后执行 npm install 或 npm run dts 可完成声明文件部署
 
 # v1.0.8
 
@@ -160,12 +169,6 @@
 * `修复` 输入 AutoJs6 服务端地址有效且部分匹配历史记录时无法按输入值建立连接的问题
 * `优化` 增加 AutoJs6 项目实例的必要文件检测及提示
 * `优化` 未命名文件保存到设备时自动识别文件类型并添加扩展名
-
-# v1.0.6
-
-###### 2023/07/21
-
-* `修复` 服务端发送消息长度超过四位十进制数时长度数据被截断的问题 _[`issue #7`](http://vscext-project.autojs6.com/issues/7)_ _[`issue #9`](http://vscext-project.autojs6.com/issues/9)_
 
 ##### 更多版本历史可参阅
 

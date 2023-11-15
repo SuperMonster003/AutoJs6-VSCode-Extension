@@ -4,6 +4,14 @@
 
 ******
 
+# v1.0.9
+
+###### 2023/11/15
+
+* `修复` 执行 npm install 可能出现 Not Found 的问题 _[`issue #1`](https://github.com/SuperMonster003/AutoJs6-TypeScript-Declarations/issues/1#issuecomment-1758808581)_
+* `修复` 新建项目时存在目录时可能出现文件遗漏复制的问题
+* `优化` 新建项目后执行 npm install 或 npm run dts 可完成声明文件部署
+
 # v1.0.8
 
 ###### 2023/10/31
@@ -59,10 +67,10 @@
 
 ###### 2022/01/01
 
-* `新增` 支持客户端 (LAN) 及服务端 (LAN/ADB) 连接方式 (Ref to Auto.js Pro)
+* `新增` 支持客户端 (LAN) 及服务端 (LAN/ADB) 连接方式 (Ref to [Auto.js Pro](http://www.autojs.cc/))
 
 # v1.0.0
 
 ###### 2021/12/07
 
-* `优化` 在 VSCode 的 OUTPUT (输出) 面板显示实时日志 (Ref to 710850609)
+* `优化` 在 VSCode 的 OUTPUT (输出) 面板显示实时日志 (Ref to [710850609](https://github.com/710850609))

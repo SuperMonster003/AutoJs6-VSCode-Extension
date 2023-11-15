@@ -8,9 +8,11 @@ src/**
 .gitignore
 node_modules/typescript/**
 node_modules/@types/**
+node_modules/@sm003/autojs6-dts/**
 tsconfig.json
 vsc-extension-quickstart.md
 *.vsix
 *.bak
+*.js
 token.txt
 package-lock.json

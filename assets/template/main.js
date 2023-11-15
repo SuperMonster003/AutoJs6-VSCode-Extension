@@ -1,1 +1,3 @@
-toastLog('Hello, AutoJs6 ' + app.autojs.versionName);
+const autojsUtils = require('./modules/autojs-utils');
+
+autojsUtils.test();

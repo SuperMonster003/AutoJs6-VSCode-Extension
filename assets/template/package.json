@@ -4,12 +4,13 @@
   "description": "project-description",
   "main": "main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dts": "npm i @sm003/autojs6-dts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@autojs/types-v6": "^6.0.0"
+    "@sm003/autojs6-dts": "^2.0.0"
   }
 }
