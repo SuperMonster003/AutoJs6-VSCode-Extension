@@ -19,4 +19,4 @@
     "versionCode": 1,
     "versionName": "1.0.0",
     "ignore": ["build", "node_modules", "out"]
-  }
+}
