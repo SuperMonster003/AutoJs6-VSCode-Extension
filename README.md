@@ -176,8 +176,6 @@
 
 * `修复` 执行任何命令均无效的问题
 
-# v1.0.7
-
 ##### 更多版本历史可参阅
 
 * [CHANGELOG.md](https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/blob/master/assets/docs/CHANGELOG.md)
