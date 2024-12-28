@@ -1,203 +1,341 @@
 {
-  "name": "autojs6-vscode-ext",
-  "displayName": "AutoJs6 VSCode Extension",
-  "description": "使用 VSCode 开发 AutoJs6 脚本文件或项目",
-
-  "version": "1.0.9",
-  "requiredClientVersionName": "6.4.0",
-  "requiredClientVersionCode": "2146",
-
-  "publisher": "003",
-  "icon": "assets/images/autojs6_material.png",
-  "repository": {
-    "type": "github",
-    "url": "http://vscext-project.autojs6.com"
-  },
-  "engines": {
-    "vscode": "^1.34.0"
-  },
-  "categories": [
-    "Programming Languages",
-    "Debuggers"
-  ],
-  "activationEvents": [
-    "onStartupFinished"
-  ],
-  "main": "./out/extension.js",
-  "contributes": {
-    "breakpoints": [
-      {
-        "language": "javascript"
-      }
+    "name": "autojs6-vscode-ext",
+    "displayName": "AutoJs6 VSCode Extension",
+    "description": "使用 VSCode 开发 AutoJs6 脚本文件或项目",
+    "version": "1.0.10",
+    "requiredClientVersionName": "6.4.0",
+    "requiredClientVersionCode": "2146",
+    "publisher": "003",
+    "icon": "assets/images/autojs6_material.png",
+    "repository": {
+        "type": "github",
+        "url": "http://vscext-project.autojs6.com"
+    },
+    "engines": {
+        "vscode": "^1.34.0"
+    },
+    "categories": [
+        "Programming Languages",
+        "Debuggers"
     ],
-    "commands": [
-      {
-        "command": "extension.viewDocument",
-        "title": "查看在线文档 (View Online Document)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.connect",
-        "title": "建立设备连接 (Connect)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.disconnectAll",
-        "title": "断开所有连接 (Disconnect All)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.run",
-        "title": "运行脚本 (Run)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.commandsHierarchy",
-        "title": "命令层级 (Commands Hierarchy)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.runOnDevice",
-        "title": "指定设备运行 (Run On Device)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.stop",
-        "title": "停止当前脚本 (Stop)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.stopAll",
-        "title": "停止所有脚本 (Stop All)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.rerun",
-        "title": "重新运行脚本 (Rerun)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.save",
-        "title": "保存到所有设备 (Save)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.saveToDevice",
-        "title": "保存到指定设备 (Save On Device)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.newUntitledFile",
-        "title": "新建文件 (New File)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.newProject",
-        "title": "新建项目 (New Project)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.saveProject",
-        "title": "保存项目到设备 (Save Project)",
-        "category": "AutoJs6"
-      },
-      {
-        "command": "extension.runProject",
-        "title": "运行项目 (Run Project)",
-        "category": "AutoJs6"
-      }
+    "activationEvents": [
+        "onStartupFinished"
     ],
-    "keybindings": [
-      {
-        "command": "extension.viewDocument",
-        "key": "alt+shift+f6",
-        "mac": "cmd+shift+f6",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "extension.run",
-        "key": "f6",
-        "mac": "f6",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "extension.commandsHierarchy",
-        "key": "f8",
-        "mac": "f8",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "extension.stopAll",
-        "key": "ctrl+shift+f6",
-        "mac": "ctrl+shift+f6",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "extension.connect",
-        "key": "ctrl+alt+f6",
-        "mac": "ctrl+cmd+f6",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "extension.disconnectAll",
-        "key": "ctrl+alt+shift+f6",
-        "mac": "ctrl+cmd+shift+f6",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "extension.stop",
-        "key": "ctrl+f6",
-        "mac": "ctrl+f6",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "extension.runProject",
-        "key": "alt+f6",
-        "mac": "cmd+f6",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "extension.runProject",
-        "key": "ctrl+alt+6 r",
-        "mac": "ctrl+cmd+6 r",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "extension.newProject",
-        "key": "ctrl+alt+6 n",
-        "mac": "ctrl+cmd+6 n",
-        "when": "editorTextFocus"
-      },
-      {
-        "command": "extension.saveProject",
-        "key": "ctrl+alt+6 s",
-        "mac": "ctrl+cmd+6 s",
-        "when": "editorTextFocus"
-      }
-    ]
-  },
-  "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "package": "vsce package",
-    "publish": "vsce publish"
-  },
-  "devDependencies": {
-    "@types/mocha": "^2.2.42",
-    "@types/node": "^12.20.37",
-    "@types/vscode": "^1.1.37",
-    "@vscode/test-electron": "^1.6.2",
-    "@sm003/autojs6-dts": "^2.0.0",
-    "typescript": "^4.8.4"
-  },
-  "dependencies": {
-    "@types/archiver": "^3.0.0",
-    "@types/stream-buffers": "^3.0.2",
-    "archiver": "^3.0.0",
-    "iconv-lite": "^0.6.3",
-    "stream-buffers": "^3.0.2",
-    "websocket": "^1.0.34"
-  },
-  "__npminstall_done": false
+    "main": "./out/extension.js",
+    "contributes": {
+        "breakpoints": [
+            {
+                "language": "javascript"
+            }
+        ],
+        "commands": [
+            {
+                "command": "extension.viewDocument",
+                "title": "查看在线文档 (View Online Document)",
+                "category": "AutoJs6"
+            },
+            {
+                "command": "extension.connect",
+                "title": "建立设备连接 (Connect)",
+                "category": "AutoJs6",
+                "icon": {
+                    "light": "assets/icons/link.svg",
+                    "dark": "assets/icons-night/link.svg"
+                }
+            },
+            {
+                "command": "extension.disconnectAll",
+                "title": "断开所有连接 (Disconnect All)",
+                "category": "AutoJs6"
+            },
+            {
+                "command": "extension.run",
+                "title": "运行脚本 (Run)",
+                "category": "AutoJs6",
+                "icon": {
+                    "light": "assets/icons/play-circle.svg",
+                    "dark": "assets/icons-night/play-circle.svg"
+                }
+            },
+            {
+                "command": "extension.runWithoutArguments",
+                "title": "运行脚本 (Run)",
+                "category": "AutoJs6",
+                "icon": {
+                    "light": "assets/icons/play-circle.svg",
+                    "dark": "assets/icons-night/play-circle.svg"
+                }
+            },
+            {
+                "command": "extension.commandsHierarchy",
+                "title": "命令层级 (Commands Hierarchy)",
+                "category": "AutoJs6"
+            },
+            {
+                "command": "extension.runOnDevice",
+                "title": "指定设备运行 (Run On Device)",
+                "category": "AutoJs6"
+            },
+            {
+                "command": "extension.stop",
+                "title": "停止当前脚本 (Stop)",
+                "category": "AutoJs6",
+                "icon": {
+                    "light": "assets/icons/error.svg",
+                    "dark": "assets/icons-night/error.svg"
+                }
+            },
+            {
+                "command": "extension.stopAll",
+                "title": "停止所有脚本 (Stop All)",
+                "category": "AutoJs6",
+                "icon": {
+                    "light": "assets/icons/close-all.svg",
+                    "dark": "assets/icons-night/close-all.svg"
+                }
+            },
+            {
+                "command": "extension.rerun",
+                "title": "重新运行脚本 (Rerun)",
+                "category": "AutoJs6"
+            },
+            {
+                "command": "extension.save",
+                "title": "保存到所有设备 (Save)",
+                "category": "AutoJs6",
+                "icon": {
+                    "light": "assets/icons/save.svg",
+                    "dark": "assets/icons-night/save.svg"
+                }
+            },
+            {
+                "command": "extension.saveToDevice",
+                "title": "保存到指定设备 (Save On Device)",
+                "category": "AutoJs6"
+            },
+            {
+                "command": "extension.newUntitledFile",
+                "title": "新建文件 (New File)",
+                "category": "AutoJs6"
+            },
+            {
+                "command": "extension.newProject",
+                "title": "新建项目 (New Project)",
+                "category": "AutoJs6",
+                "icon": {
+                    "light": "assets/icons/diff-added.svg",
+                    "dark": "assets/icons-night/diff-added.svg"
+                }
+            },
+            {
+                "command": "extension.saveProject",
+                "title": "保存项目到设备 (Save Project)",
+                "category": "AutoJs6",
+                "icon": {
+                    "light": "assets/icons/save-all.svg",
+                    "dark": "assets/icons-night/save-all.svg"
+                }
+            },
+            {
+                "command": "extension.runProject",
+                "title": "运行项目 (Run Project)",
+                "category": "AutoJs6",
+                "icon": {
+                    "light": "assets/icons/run-all.svg",
+                    "dark": "assets/icons-night/run-all.svg"
+                }
+            }
+        ],
+        "menus": {
+            "editor/title": [
+                {
+                    "command": "extension.connect",
+                    "group": "navigation@60"
+                },
+                {
+                    "command": "extension.runWithoutArguments",
+                    "group": "navigation@63",
+                    "when": "resourceLangId == javascript"
+                },
+                {
+                    "command": "extension.stop",
+                    "group": "navigation@66",
+                    "when": "resourceLangId == javascript"
+                },
+                {
+                    "command": "extension.stopAll",
+                    "group": "navigation@69"
+                },
+                {
+                    "command": "extension.save",
+                    "group": "navigation@72"
+                },
+                {
+                    "command": "extension.runProject",
+                    "group": "navigation@75"
+                },
+                {
+                    "command": "extension.saveProject",
+                    "group": "navigation@78"
+                },
+                {
+                    "command": "extension.newProject",
+                    "group": "navigation@81"
+                }
+            ],
+            "explorer/context": [
+                {
+                    "command": "extension.run",
+                    "group": "navigation@60",
+                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                },
+                {
+                    "command": "extension.runOnDevice",
+                    "group": "navigation@63",
+                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                },
+                {
+                    "command": "extension.stop",
+                    "group": "navigation@69",
+                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                },
+                {
+                    "command": "extension.stopAll",
+                    "group": "navigation@72",
+                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                },
+                {
+                    "command": "extension.rerun",
+                    "group": "navigation@75",
+                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                },
+                {
+                    "command": "extension.saveToDevice",
+                    "group": "navigation@78",
+                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                },
+                {
+                    "command": "extension.save",
+                    "group": "navigation@81",
+                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                },
+                {
+                    "command": "extension.runProject",
+                    "group": "navigation@84",
+                    "when": "explorerResourceIsFolder"
+                },
+                {
+                    "command": "extension.saveProject",
+                    "group": "navigation@87",
+                    "when": "explorerResourceIsFolder"
+                },
+                {
+                    "command": "extension.newProject",
+                    "group": "navigation@90",
+                    "when": "explorerResourceIsFolder"
+                }
+            ],
+            "commandPalette": [
+                {
+                    "command": "extension.runWithoutArguments",
+                    "when": "false"
+                }
+            ]
+        },
+        "keybindings": [
+            {
+                "command": "extension.viewDocument",
+                "key": "alt+shift+f6",
+                "mac": "cmd+shift+f6",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.run",
+                "key": "f6",
+                "mac": "f6",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.commandsHierarchy",
+                "key": "f8",
+                "mac": "f8",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.stopAll",
+                "key": "ctrl+shift+f6",
+                "mac": "ctrl+shift+f6",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.connect",
+                "key": "ctrl+alt+f6",
+                "mac": "ctrl+cmd+f6",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.disconnectAll",
+                "key": "ctrl+alt+shift+f6",
+                "mac": "ctrl+cmd+shift+f6",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.stop",
+                "key": "ctrl+f6",
+                "mac": "ctrl+f6",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.runProject",
+                "key": "alt+f6",
+                "mac": "cmd+f6",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.runProject",
+                "key": "ctrl+alt+6 r",
+                "mac": "ctrl+cmd+6 r",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.newProject",
+                "key": "ctrl+alt+6 n",
+                "mac": "ctrl+cmd+6 n",
+                "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.saveProject",
+                "key": "ctrl+alt+6 s",
+                "mac": "ctrl+cmd+6 s",
+                "when": "editorTextFocus"
+            }
+        ]
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc --allowJs false --typeRoots null -p ./",
+        "watch": "tsc --allowJs false --typeRoots null -watch -p ./",
+        "package": "vsce package",
+        "publish": "vsce publish"
+    },
+    "devDependencies": {
+        "@sm003/autojs6-dts": "^2.0.0",
+        "@types/archiver": "^3.0.0",
+        "@types/mocha": "^2.2.42",
+        "@types/node": "^12.20.37",
+        "@types/stream-buffers": "^3.0.2",
+        "@types/vscode": "^1.1.37",
+        "@vscode/test-electron": "^1.6.2",
+        "typescript": "^5.3.3",
+        "vsce": "^2.15.0"
+    },
+    "dependencies": {
+        "archiver": "^3.0.0",
+        "iconv-lite": "^0.6.3",
+        "stream-buffers": "^3.0.2",
+        "websocket": "^1.0.34",
+        "systeminformation": "^5.23.12",
+        "pinyin": "^2.11.0"
+    },
+    "__npminstall_done": false
 }

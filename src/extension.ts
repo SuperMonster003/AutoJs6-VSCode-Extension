@@ -7,10 +7,10 @@ import * as vscode from 'vscode';
 import { Disposable, Memento, OutputChannel, QuickInputButton, TextEditor, ThemeIcon, Uri } from 'vscode';
 import * as fs from 'fs';
 import * as util from './util';
-import { logDebug } from './util';
 import * as querystring from 'querystring';
 
 import i18n from './i18n';
+import * as pinyin from 'pinyin';
 
 import { Adb } from './adb';
 import { awaiter } from './awaiter';
@@ -26,22 +26,27 @@ let extension: Extension = null;
 export let connectedServerAdb: Set<string> = new Set();
 export let connectedServerLan: Set<string> = new Set();
 
-const deviceChannel: { [prop: string]: OutputChannel } = {};
-const regexIpAddress = /^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}(:\d+)?$/;
-const storageIpAddressBlacklist = [
-    '127.0.0.1',
-    '0.0.0.0',
-];
+export let extensionDebugChannel: OutputChannel = null;
 
-const LOOP_BACK: string = '127.0.0.1';
-const EXTENSION_NAME: string = 'AutoJs6 VSCode Extension';
-const DEFAULT_QUICK_PICK_PLACEHOLDER = '输入或选择连接建立方式';
+const deviceChannel: { [prop: string]: OutputChannel } = {};
+
+const IP_LOOP_BACK = '127.0.0.1';
+const IP_UNIVERSAL = '0.0.0.0';
+const EXTENSION_NAME = 'AutoJs6 VSCode Extension';
+
+const PLACEHOLDER_INPUT_OR_SELECT_A_WAY_TO_CONNECT = '输入或选择连接建立方式';
+const PLACEHOLDER_INPUT_OR_SELECT_A_NETWORK_INTERFACE = '输入或选择一个网络接口';
+const PLACEHOLDER_FETCHING_DETAILS_IN_BACKGROUND = '正在后台获取详细信息';
+
 const STRING_YES = '是 (Yes)';
 const STRING_NO = '否 (No)';
 
 export const CONNECTION_TYPE_CLIENT_LAN = 0;
 export const CONNECTION_TYPE_SERVER_LAN = 1;
 export const CONNECTION_TYPE_SERVER_ADB = 2;
+
+const storageIpAddressBlacklist = [ IP_LOOP_BACK, IP_UNIVERSAL ];
+const regexIpAddress = /^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}(:\d+)?$/;
 
 const pickButtons: {
     close: QuickInputButton;
@@ -88,62 +93,55 @@ const commandsHierarchyPreset = {
     },
 };
 
-const commandsHierarchy: {
-    grade: number | string;
+type CommandsHierarchy = {
+    instruction: number | string;
     desc: string | { zh: string, en?: string };
-    subs?: {
-        grade: number | string;
-        desc: string | { zh: string, en?: string };
-        subs?: {
-            grade: number | string;
-            desc: string | { zh: string, en?: string };
-            action?(): void;
-        }[];
-        action?(): void;
-    }[];
+    subs?: CommandsHierarchy[];
     action?(): void;
-}[] = [ {
-    grade: 1,
+}
+
+const commandsHierarchy: CommandsHierarchy[] = [ {
+    instruction: 1,
     desc: { zh: '连接', en: 'Connect' },
     subs: [ {
-        grade: 1,
+        instruction: 1,
         desc: { zh: '建立连接', en: 'Establish' },
         subs: [ {
-            grade: 1,
+            instruction: 1,
             desc: `${picker.commands.server} | ${picker.agents.lan}`,
             action() {
 
             },
         }, {
-            grade: 2,
+            instruction: 2,
             desc: `${picker.commands.server} | ${picker.agents.qr}`,
             action() {
 
             },
         }, {
-            grade: 4,
+            instruction: 4,
             desc: `${picker.commands.client} | ${picker.agents.lan}`,
             action() {
 
             },
         }, {
-            grade: 5,
+            instruction: 5,
             desc: `${picker.commands.client} | ${picker.agents.adb}`,
             action() {
 
             },
         } ],
     }, {
-        grade: 0,
+        instruction: 0,
         desc: { zh: '断开连接', en: 'Disconnect' },
         subs: [ {
-            grade: 1,
+            instruction: 1,
             desc: { zh: '全部设备', en: 'All Devices' },
             action() {
 
             },
         }, {
-            grade: 2,
+            instruction: 2,
             desc: { zh: '指定设备', en: 'Specified Devices' },
             action() {
 
@@ -151,35 +149,35 @@ const commandsHierarchy: {
         } ],
     } ],
 }, {
-    grade: 6,
+    instruction: 6,
     desc: { zh: '运行', en: 'Run' },
     subs: [ {
-        grade: 1,
+        instruction: 1,
         desc: commandsHierarchyPreset.desc.script,
         subs: [ {
-            grade: 1,
+            instruction: 1,
             desc: { zh: '全部设备', en: 'All Devices' },
             action() {
 
             },
         }, {
-            grade: 2,
+            instruction: 2,
             desc: { zh: '指定设备', en: 'Specified Devices' },
             action() {
 
             },
         } ],
     }, {
-        grade: 2,
+        instruction: 2,
         desc: commandsHierarchyPreset.desc.project,
         subs: [ {
-            grade: 1,
+            instruction: 1,
             desc: { zh: '全部设备', en: 'All Devices' },
             action() {
 
             },
         }, {
-            grade: 2,
+            instruction: 2,
             desc: { zh: '指定设备', en: 'Specified Devices' },
             action() {
 
@@ -187,35 +185,35 @@ const commandsHierarchy: {
         } ],
     } ],
 }, {
-    grade: 5,
+    instruction: 5,
     desc: { zh: '保存', en: 'Save' },
     subs: [ {
-        grade: 1,
+        instruction: 1,
         desc: commandsHierarchyPreset.desc.script,
         subs: [ {
-            grade: 1,
+            instruction: 1,
             desc: { zh: '全部设备', en: 'All Devices' },
             action() {
 
             },
         }, {
-            grade: 2,
+            instruction: 2,
             desc: { zh: '指定设备', en: 'Specified Devices' },
             action() {
 
             },
         } ],
     }, {
-        grade: 2,
+        instruction: 2,
         desc: commandsHierarchyPreset.desc.project,
         subs: [ {
-            grade: 1,
+            instruction: 1,
             desc: { zh: '全部设备', en: 'All Devices' },
             action() {
 
             },
         }, {
-            grade: 2,
+            instruction: 2,
             desc: { zh: '指定设备', en: 'Specified Devices' },
             action() {
 
@@ -223,35 +221,35 @@ const commandsHierarchy: {
         } ],
     } ],
 }, {
-    grade: 0,
+    instruction: 0,
     desc: { zh: '停止', en: 'Stop' },
     subs: [ {
-        grade: 1,
+        instruction: 1,
         desc: commandsHierarchyPreset.desc.currentTask,
         subs: [ {
-            grade: 1,
+            instruction: 1,
             desc: { zh: '全部设备', en: 'All Devices' },
             action() {
 
             },
         }, {
-            grade: 2,
+            instruction: 2,
             desc: { zh: '指定设备', en: 'Specified Devices' },
             action() {
 
             },
         } ],
     }, {
-        grade: 2,
+        instruction: 2,
         desc: commandsHierarchyPreset.desc.allTasks,
         subs: [ {
-            grade: 1,
+            instruction: 1,
             desc: { zh: '全部设备', en: 'All Devices' },
             action() {
 
             },
         }, {
-            grade: 2,
+            instruction: 2,
             desc: { zh: '指定设备', en: 'Specified Devices' },
             action() {
 
@@ -259,35 +257,35 @@ const commandsHierarchy: {
         } ],
     } ],
 }, {
-    grade: 1,
+    instruction: 2,
     desc: { zh: '新建', en: 'New' },
     subs: [ {
-        grade: 1,
+        instruction: 1,
         desc: commandsHierarchyPreset.desc.file,
         action() {
 
         },
     }, {
-        grade: 2,
+        instruction: 2,
         desc: commandsHierarchyPreset.desc.project,
         action() {
 
         },
     } ],
 }, {
-    grade: 3,
+    instruction: 3,
     desc: { zh: '扩展', en: 'Extension' },
     subs: [ {
-        grade: 1,
+        instruction: 1,
         desc: { zh: '查看在线文档', en: 'View Online Document' },
         subs: [ {
-            grade: 1,
+            instruction: 1,
             desc: commandsHierarchyPreset.desc.viewWithVscBrowser,
             action() {
 
             },
         }, {
-            grade: 2,
+            instruction: 2,
             desc: commandsHierarchyPreset.desc.viewWithSysBrowser,
             action() {
 
@@ -295,7 +293,7 @@ const commandsHierarchy: {
         } ],
     } ],
 }, {
-    grade: '?',
+    instruction: '?',
     desc: { zh: '查看全部命令层级', en: 'View All Commands Hierarchy' },
     action() {
 
@@ -313,7 +311,7 @@ class AJHttpServer extends EventEmitter {
         super();
         this.port = port;
         this.httpServer = http.createServer((request, response) => {
-            console.log('Received request for ' + request.url);
+            logDebug('Received request for ' + request.url);
 
             let urlObj = url.parse(request.url);
             let queryObjRaw = urlObj.query;
@@ -326,14 +324,14 @@ class AJHttpServer extends EventEmitter {
             //     path: queryObjRaw.get('path'),
             // };
 
-            console.log(queryObj);
-            console.log(urlObj.pathname);
+            logDebug(queryObj);
+            logDebug(urlObj.pathname);
 
             if (urlObj.pathname == '/exec') {
                 response.writeHead(200);
                 response.end('this command is:' + queryObj.cmd + '-->' + queryObj.path);
                 this.emit('cmd', queryObj.cmd, queryObj.path);
-                console.log(queryObj.cmd, queryObj.path);
+                logDebug(queryObj.cmd, queryObj.path);
             } else {
                 response.writeHead(404);
                 response.end();
@@ -343,7 +341,7 @@ class AJHttpServer extends EventEmitter {
             this.isHttpServerStarted = true;
             const address: any = this.httpServer.address();
             // var localAddress = this.getIPAddress();
-            console.log(`server listening on port ${address.port}`);
+            logDebug(`server listening on port ${address.port}`);
             this.emit('connect');
         });
     }
@@ -361,9 +359,9 @@ export class Extension {
         recordPrefix: this.newPicker('record', 'empty', null, 'VSCode 作为客户端使用 IP 地址 %s 连接至 AutoJs6 服务端'),
     };
     static readonly commands: Array<keyof Extension> = [
-        'viewDocument', 'connect', 'disconnectAll', 'run', 'runOnDevice', 'stop',
-        'stopAll', 'rerun', 'save', 'saveToDevice', 'newUntitledFile',
-        'newProject', 'runProject', 'saveProject', 'commandsHierarchy',
+        'viewDocument', 'connect', 'disconnectAll', 'run', 'runWithoutArguments',
+        'runOnDevice', 'stop', 'stopAll', 'rerun', 'save', 'saveToDevice',
+        'newUntitledFile', 'newProject', 'runProject', 'saveProject', 'commandsHierarchy',
     ];
 
     private adb: Adb;
@@ -383,8 +381,17 @@ export class Extension {
         extensionScope.deactivate = this.disconnectAll.bind(this);
     }
 
-    private static connectToLocalHint() {
-        vscode.window.showInformationMessage(`在 AutoJs6 侧拉菜单开启客户端模式并连接至 ${util.getNicAddress()}`);
+    private connectToLocalHint() {
+        const basicNI = util.getBasicNetworkInterfaces();
+        if (basicNI.length === 0) {
+            vscode.window.showErrorMessage('未找到可用的局域网 IP 地址');
+            return;
+        }
+        this.showQuickPickForAvailableNetworkInterfaces(basicNI).then((ip) => {
+            if (ip !== undefined) {
+                vscode.window.showInformationMessage(`在 AutoJs6 侧拉菜单开启客户端模式并连接至 ${ip}`);
+            }
+        });
     }
 
     private static showLocalQrCode() {
@@ -414,6 +421,7 @@ export class Extension {
             vscode.window.showErrorMessage('未发现已连接的设备');
             return;
         }
+        logDebug('url = ' + url);
         if (url == null) {
             let editor = this.lastActiveEditor;
             if (!editor) {
@@ -611,7 +619,7 @@ export class Extension {
             },
             update(key: string, addresses: string[]): Thenable<void> {
                 let deduped = Array.from(new Set(addresses.map(detach)));
-                return globalState.update(key, deduped.filter(addr => addr && addr !== LOOP_BACK));
+                return globalState.update(key, deduped.filter(addr => addr && addr !== IP_LOOP_BACK));
             },
         };
         return state;
@@ -666,12 +674,50 @@ export class Extension {
         //         recentDevice = null
         //     }
         // }
-        vscode.window.showQuickPick(devices.map(dev => dev.toString()), {
-            canPickMany: true,
-        }).then((selected) => {
-            callback(devices.filter(dev => selected.includes(dev.toString())));
-        });
+        // vscode.window.showQuickPick(devices.map(dev => dev.toString()), {
+        //     canPickMany: true,
+        // }).then((selected) => {
+        //     callback(devices.filter(dev => selected.includes(dev.toString())));
+        // });
+        this.showQuickPickForDeviceSelection(devices, callback);
         return true;
+    }
+
+    private showQuickPickForDeviceSelection(devices: any[], callback: (selected: any[]) => void) {
+        const quickPick = vscode.window.createQuickPick();
+
+        quickPick.items = devices.map(dev => ({ label: dev.toString() })); // 将设备映射成 QuickPickItem
+        quickPick.canSelectMany = true;
+
+        quickPick.onDidAccept(() => {
+            const activeItem = quickPick.activeItems[0]; // 当前光标所在的项目
+            const selectedItems = quickPick.selectedItems; // 已选中的项目
+
+            let finalSelection: string[];
+
+            if (selectedItems.length === 0) {
+                // 如果没有任何勾选项，选中当前光标所在的项目
+                finalSelection = activeItem ? [ activeItem.label ] : [];
+            } else {
+                // 有已选中的项目，将所有已选择的项目与当前光标所在的项目取并集
+                const selectedSet = new Set(selectedItems.map(item => item.label));
+                if (activeItem) {
+                    selectedSet.add(activeItem.label); // 包含当前光标所在的项目
+                }
+                finalSelection = Array.from(selectedSet); // 去重
+            }
+
+            const selectedDevices = devices.filter(dev => finalSelection.includes(dev.toString()));
+            callback(selectedDevices);
+
+            quickPick.hide();
+        });
+
+        quickPick.onDidHide(() => {
+            quickPick.dispose(); // 清理资源
+        });
+
+        quickPick.show(); // 显示 QuickPick
     }
 
     private sendProjectCommand(command: ProjectCommands, url?: string) {
@@ -742,7 +788,7 @@ export class Extension {
 
                 let idTimeout = setTimeout(() => this.onAdbDeviceConnectTimeout(dev), 5e3);
 
-                this.client.connectTo(LOOP_BACK, ports[0].src, CONNECTION_TYPE_SERVER_ADB, dev.id)
+                this.client.connectTo(IP_LOOP_BACK, ports[0].src, CONNECTION_TYPE_SERVER_ADB, dev.id)
                     .then(() => clearTimeout(idTimeout));
             } catch (e) {
                 vscode.window.showErrorMessage(e.toString());
@@ -803,7 +849,9 @@ export class Extension {
                         cache.old = cache.young;
                         cache.young = new Set;
                     }, 15e3);
-                    itvId.unref && itvId.unref();
+                    if (typeof itvId.unref === 'function') {
+                        itvId.unref();
+                    }
                 }
                 for (let port of function* $iiFe() {
                     if (portInfo) {
@@ -908,7 +956,7 @@ export class Extension {
                 case undefined:
                     break;
                 case this.picks.ajClientLan.label:
-                    Extension.connectToLocalHint();
+                    this.connectToLocalHint();
                     break;
                 case this.picks.ajClientQr.label:
                     Extension.showLocalQrCode();
@@ -981,8 +1029,13 @@ export class Extension {
         try {
             return await new Promise<string | T | T[] | undefined>((resolve) => {
                 const input = vscode.window.createQuickPick();
-                input.title = `本机 IP: ${util.getNicAddress()}`;
-                input.placeholder = DEFAULT_QUICK_PICK_PLACEHOLDER;
+                const basicNicAddresses = util.getBasicNetworkInterfaces();
+                if (basicNicAddresses.length === 1) {
+                    input.title = `当前活动 IP: ${basicNicAddresses[0].ip4}`;
+                } else if (basicNicAddresses.length > 1) {
+                    input.title = `当前活动 IP: [ ${basicNicAddresses.map(o => o.ip4).join(', ')} ]`;
+                }
+                input.placeholder = PLACEHOLDER_INPUT_OR_SELECT_A_WAY_TO_CONNECT;
                 input.items = commands;
                 input.buttons = [
                     ...[],
@@ -1028,13 +1081,75 @@ export class Extension {
         }
     }
 
+    private async showQuickPickForAvailableNetworkInterfaces(items: util.NIDetails[]) {
+        const sep = ' | ';
+        const disposables: Disposable[] = [];
+        try {
+            return await new Promise<string | undefined>((resolve) => {
+                const input = vscode.window.createQuickPick();
+
+                input.title = `当前活动的网络接口`;
+
+                (async () => {
+                    const detailedNetworkInterfaces = await util.getDetailedNetworkInterfaces(items);
+                    input.placeholder = PLACEHOLDER_INPUT_OR_SELECT_A_NETWORK_INTERFACE;
+                    input.items = input.items.map((item) => {
+                        if (item.detail === undefined) return item;
+                        let ip4 = item.detail.split(sep)[0];
+                        let aim = detailedNetworkInterfaces.find(o => o.ip4 === ip4);
+                        if (aim === undefined) return item;
+                        let { ifaceName, type, speed, default: def } = aim;
+                        if (ifaceName !== undefined) item.label += sep + ifaceName;
+                        if (type !== undefined) item.detail += sep + this.translateNetworkType(type);
+                        if (speed !== undefined) item.detail += sep + speed + ' Mbps';
+                        if (def !== undefined && def) item.detail += sep + '默认网络接口';
+                        return item;
+                    });
+                })();
+
+                input.placeholder = PLACEHOLDER_INPUT_OR_SELECT_A_NETWORK_INTERFACE + ` [ ${PLACEHOLDER_FETCHING_DETAILS_IN_BACKGROUND}... ]`;
+                input.items = items.map(item => {
+                    let label = item.iface;
+                    let detail = item.ip4 + sep + item.mac.toLowerCase();
+                    return { label, detail };
+                });
+                input.buttons = [
+                    ...[],
+                    ...[],
+                    ...[],
+                    ...[ pickButtons.close ],
+                ];
+
+                disposables.push(
+                    input.onDidChangeSelection((items) => {
+                        const item = items[0];
+                        resolve(item?.detail?.split(sep)?.[0]);
+                        input.hide();
+                    }),
+                    input.onDidHide(() => {
+                        resolve(undefined);
+                        input.dispose();
+                    }),
+                    input.onDidTriggerButton((item) => {
+                        if (item === pickButtons.close) {
+                            input.hide();
+                        }
+                    }),
+                );
+                input.show();
+            });
+        } finally {
+            disposables.forEach(d => d.dispose());
+        }
+    }
+
     private async showAlternativePick(title: string) {
         const disposables: Disposable[] = [];
         try {
             return await new Promise<string | undefined>((resolve) => {
                 const input = vscode.window.createQuickPick();
                 input.title = title;
-                input.placeholder = DEFAULT_QUICK_PICK_PLACEHOLDER;
+                input.placeholder = PLACEHOLDER_INPUT_OR_SELECT_A_WAY_TO_CONNECT;
                 input.items = [ { label: STRING_YES }, { label: STRING_NO } ];
                 input.buttons = [
                     ...[],
@@ -1143,7 +1258,7 @@ export class Extension {
                     }),
                     input.onDidChangeSelection((items) => {
                         const item = items[0];
-                        resolve(item.label);
+                        resolve(item?.label);
                         input.hide();
                     }),
                     input.onDidHide(() => {
@@ -1163,6 +1278,23 @@ export class Extension {
         }
     }
 
+    private translateNetworkType(type: string): string {
+        switch (type.toLowerCase()) {
+            case 'wired':
+                return '有线网络';
+            case 'wireless':
+                return '无线网络';
+            case 'virtual':
+                return '虚拟网络';
+            case 'unknown':
+                return '未知网络';
+            case 'other':
+                return '其他网络';
+            default:
+                return type.toUpperCase(); // 未知类型，返回大写形式
+        }
+    }
+
     viewDocument() {
         vscode.env.openExternal(vscode.Uri.parse('https://docs.autojs6.com/'));
     }
@@ -1173,8 +1305,21 @@ export class Extension {
         // vscode.window.showInformationMessage('All connections to AutoJs6 disconnected');
     }
 
-    run(url?: string) {
-        this.runFile(url);
+    run(urlOrArgs?: string | Uri) {
+        logDebug('run argument: ' + urlOrArgs);
+        if (typeof urlOrArgs === 'object' && urlOrArgs !== null) {
+            if (typeof urlOrArgs.path === 'string') {
+                return this.runFile(urlOrArgs.path);
+            }
+        }
+        if (typeof urlOrArgs === 'string') {
+            return this.runFile(urlOrArgs);
+        }
+        return this.runWithoutArguments();
+    }
+
+    runWithoutArguments() {
+        return this.runFile(undefined);
     }
 
     stop() {
@@ -1235,13 +1380,54 @@ export class Extension {
                 let template = path.join(this.context.extensionPath, 'assets', 'template');
                 return new ProjectTemplate(vscode.Uri.file(template), uris[0]).build();
             }
-        }).then((uri) => {
-            if (uri) {
-                vscode.commands.executeCommand('vscode.openFolder', uri, {
-                    forceNewWindow: true,
-                });
+        }).then((outUri: Uri) => {
+            if (outUri) {
+                this.replacePlaceholders(outUri);
+                vscode.commands.executeCommand('vscode.openFolder', outUri, { forceNewWindow: true });
             }
         });
+    }
+
+    private replacePlaceholders(uri: vscode.Uri) {
+        try {
+            let uriFsPath = uri.fsPath;
+            let baseName = path.basename(uriFsPath);
+            let projectJsonPath = path.join(uriFsPath, 'project.json');
+
+            // 包名规范化逻辑
+            const normalizedPackageSuffix = this.generatePackageNameSuffix(baseName);
+
+            // 读取并替换占位符
+            let readString = fs.readFileSync(projectJsonPath, { encoding: 'utf8' })
+                .replace(/%PROJECT_NAME_PLACEHOLDER%/g, baseName)
+                .replace(/%PACKAGE_SUFFIX_PLACEHOLDER%/g, normalizedPackageSuffix);
+
+            fs.writeFileSync(projectJsonPath, readString, { encoding: 'utf8' });
+        } catch (e) {
+            logDebug('Error while replacing placeholders: ', e);
+        }
+    }
+
+    // 用于生成规范的包名后缀
+    private generatePackageNameSuffix(name: string): string {
+        // 如果名称包含中文字符，转成 ASCII 拼音
+        if (/[\u4e00-\u9fff]/.test(name)) {
+            name = pinyin(name, {
+                style: pinyin.STYLE_NORMAL, // 输出普通拼音，不带声调
+                heteronym: false, // 禁用多音字
+            }).join('');
+        }
+
+        // 替换所有非字母数字的字符为 "_"
+        name = name.replace(/\W+/g, '_');
+
+        // 如果包名以数字开头，加上 `app_` 前缀
+        if (/^\d/.test(name)) {
+            name = `app_${name}`;
+        }
+
+        // 转换为全小写
+        return name.toLowerCase();
     }
 
     runProject(url?: string) {
@@ -1259,9 +1445,21 @@ export class Extension {
 
 // noinspection JSUnusedGlobalSymbols
 export function activate(context: vscode.ExtensionContext) {
+    extensionDebugChannel = vscode.window.createOutputChannel('AutoJs6 VSCode Extension Debug');
     logDebug(`extension "${EXTENSION_NAME}" is activating`);
     extension = new Extension(context, this);
     logDebug(`extension "${EXTENSION_NAME}" is now active`);
+}
+
+export function logDebug(message?: any, ...optionalParams: any[]) {
+    if (extensionDebugChannel) {
+        let fullMessage = String(message);
+        if (optionalParams.length > 0) {
+            fullMessage.trimEnd();
+            fullMessage += ` ${optionalParams.map(param => typeof param === 'object' ? JSON.stringify(param) : String(param)).join(' ')}`;
+        }
+        extensionDebugChannel.appendLine(fullMessage);
+    }
 }
 
 export type ProjectCommands = 'run_project' | 'save_project';
@@ -1279,7 +1477,7 @@ new AJHttpServer(HTTP_SERVER_PORT)
                     vscode.window.showErrorMessage(`接收到未知指令 "${cmd}"`);
                     return;
                 }
-                console.info(`执行接收到的指令 "${cmd}"`);
+                logDebug(`执行接收到的指令 "${cmd}"`);
                 extension[cmd]['call'](extension, ...params);
         }
     })

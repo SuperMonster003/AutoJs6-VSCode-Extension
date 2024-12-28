@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as util from 'util';
 
 import {awaiter} from "./awaiter";
+import {logDebug} from './extension';
 
 const readdir = util.promisify(fs.readdir);
 const lstat = util.promisify(fs.lstat);
@@ -13,7 +14,7 @@ function _walk(dir, result) {
         yield Promise.all(files.map((file) => awaiter(function* () {
             let fullPath = path.join(dir, file);
             let stats = yield lstat(fullPath);
-            console.log("walk: ", fullPath);
+            logDebug("walk: ", fullPath);
             if (stats.isDirectory()) {
                 yield _walk(fullPath, result);
             } else {
@@ -49,7 +50,7 @@ export class FileObserver {
     walk(): Promise<any> {
         return awaiter(function* () {
             const files = yield walk(this.dir);
-            console.log("walk: ", files);
+            logDebug("walk: ", files);
             const modifiedFiles = [];
             const oldFiles = this.files;
             this.files = new Map();

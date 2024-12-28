@@ -3,17 +3,30 @@
         "module": "commonjs",
         "target": "es6",
         "outDir": "out",
+        "rootDir": "src",
         "lib": [
+            "es5",
             "es6",
             "dom",
             "es2015",
-            "es5"
+            "es2020"
+        ],
+        "types": [
+            "node",
+            "mocha"
         ],
         "sourceMap": true,
-        "rootDir": "src",
-        "resolveJsonModule": true
+        "resolveJsonModule": true,
+        "typeRoots": [
+            "declarations",
+            "node_modules/@types",
+            "node_modules/@autojs",
+            "node_modules/@sm003/autojs6-dts/declarations"
+        ],
+        "allowJs": true
     },
     "exclude": [
+        "declarations",
         "node_modules",
         ".vscode-test"
     ]
