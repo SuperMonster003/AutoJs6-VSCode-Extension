@@ -5,14 +5,14 @@ import * as vscode from 'vscode';
 import * as archiver from 'archiver';
 import * as streamBuffers from 'stream-buffers';
 
-import {Uri} from 'vscode';
-import {FileObserver, FileFilter} from './diff';
-import {awaiter} from './awaiter';
-import {logDebug} from './util';
+import { Uri } from 'vscode';
+import { FileObserver, FileFilter } from './diff';
+import { awaiter } from './awaiter';
+import { logDebug } from './extension';
 
 export class ProjectTemplate {
-    private readonly outUri: Uri;
     private readonly templateUri: Uri;
+    private readonly outUri: Uri;
 
     constructor(templateUri: Uri, uri: Uri) {
         this.templateUri = templateUri;
@@ -27,20 +27,22 @@ export class ProjectTemplate {
         }.bind(this));
     }
 
-    copyDirIfNotExists(from, to) {
+    copyDirIfNotExists(from: string, to: string) {
         return awaiter(function* () {
-            const files = yield fs.promises.readdir(from);
+            const files = fs.readdirSync(from);
             files.forEach((file) => awaiter(function* () {
                 const source = path.join(from, file);
                 const target = path.join(to, file);
-                if ((yield fs.promises.stat(source)).isDirectory()) {
-                    this.copyDirIfNotExists(source, target);
+                if ((fs.statSync(source)).isDirectory()) {
+                    this.copyDirIfNotExists(source, target).catch(function (e: Error) {
+                        vscode.window.showErrorMessage(e.message);
+                    });
                 } else if (!fs.existsSync(target)) {
                     const dir = path.dirname(target);
                     if (!fs.existsSync(dir)) {
-                        yield fs.promises.mkdir(dir, {recursive: true});
+                        fs.mkdirSync(dir, { recursive: true });
                     }
-                    yield fs.promises.copyFile(source, target)
+                    fs.copyFileSync(source, target);
                 }
             }.bind(this)));
         }.bind(this));
@@ -59,16 +61,16 @@ export class Project {
         let projectPath = path.join(this.folder.fsPath, 'project.json');
         if (!fs.existsSync(projectPath)) {
             vscode.window.showErrorMessage(`缺少必要的项目配置文件: ${projectPath}`);
-            return Object.create(null);;
+            return Object.create(null);
         }
 
         this.config = ProjectConfig.fromJsonFile(projectPath);
         this.watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder.fsPath, 'project\.json'));
         this.watcher.onDidChange((event) => {
-            console.log('file changed: ', event.fsPath);
+            logDebug('file changed: ', event.fsPath);
             if (event.fsPath === path.join(this.folder.fsPath, 'project.json')) {
                 this.config = ProjectConfig.fromJsonFile(event.fsPath);
-                console.log('project.json changed: ', this.config);
+                logDebug('project.json changed: ', this.config);
             }
         });
     }
@@ -106,10 +108,10 @@ export class ProjectObserver {
                 const streamBuffer = new streamBuffers.WritableStreamBuffer();
                 zip.pipe(streamBuffer);
                 fileChanges.modified.forEach((relativePath) => {
-                    zip.append(fs.createReadStream(path.join(this.folder, relativePath)), {name: relativePath});
+                    zip.append(fs.createReadStream(path.join(this.folder, relativePath)), { name: relativePath });
                 });
                 zip.finalize();
-                return new Promise<{buffer: Buffer, deletedFiles: string[]}>((resolve) => {
+                return new Promise<{ buffer: Buffer, deletedFiles: string[] }>((resolve) => {
                     zip.on('finish', () => {
                         streamBuffer.end();
                         resolve({

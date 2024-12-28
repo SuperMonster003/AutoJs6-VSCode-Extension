@@ -6,7 +6,8 @@ import * as events from 'events';
 import * as vscode from 'vscode';
 import * as project from './project';
 import { Project, ProjectObserver } from './project';
-import { buffToString, logDebug } from './util';
+import { buffToString } from './util';
+import { logDebug } from './extension';
 import { CONNECTION_TYPE_CLIENT_LAN, CONNECTION_TYPE_SERVER_ADB, CONNECTION_TYPE_SERVER_LAN, Extension, ProjectCommands, connectedServerAdb, connectedServerLan } from './extension';
 
 let packageJson: string = fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8');
@@ -231,7 +232,7 @@ export class Device extends events.EventEmitter {
                         this.emit('message', json);
                         this.emit('data:' + json.type, json.data);
                     } catch (e) {
-                        console.error(e);
+                        logDebug(e);
                     }
                 }
             })
@@ -261,7 +262,7 @@ export class Device extends events.EventEmitter {
             this.emit('message', parsed);
             this.emit(`data:${parsed.type}`, parsed.data);
         } catch (e) {
-            console.error(e);
+            logDebug(e);
         }
     }
 }
@@ -303,7 +304,7 @@ export class Devices extends events.EventEmitter {
         logDebug('## Devices.accept');
 
         socket.on('error', (e) => {
-            console.error('connect error: ', e);
+            logDebug('connect error: ', e);
         });
 
         new Device(socket).on('attach', (dev) => {
@@ -350,7 +351,7 @@ export class Devices extends events.EventEmitter {
                 });
             });
             socket.on('error', (e) => {
-                console.error('connect error: ', e);
+                logDebug('connect error: ', e);
                 reject(e);
             });
         });

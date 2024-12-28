@@ -10,7 +10,7 @@
 
   <p>
     <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/issues"><img alt="GitHub closed issues" src="https://img.shields.io/github/issues/SuperMonster003/AutoJs6-VSCode-Extension?color=009688"/></a>
-    <a href="https://github.com/SuperMonster003/AutoJs6"><img alt="GitHub AutoJs6 repository" src="https://img.shields.io/badge/auto.js->= 6.4.0-67a91b"/></a>
+    <a href="https://github.com/SuperMonster003/AutoJs6"><img alt="GitHub AutoJs6 repository" src="https://img.shields.io/badge/autojs6->= 6.4.0-67a91b"/></a>
     <a href="https://github.com/topics/javascript"><img alt="GitHub top language" src="https://img.shields.io/github/languages/top/SuperMonster003/AutoJs6-VSCode-Extension?color=eb8031"/></a>
     <br>
     <a href="https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/commit/d43a0119b214a17062501ea8a938b13bd97d2028"><img alt="Created" src="https://img.shields.io/date/1638929280?color=2e7d32&label=created"/></a>
@@ -59,10 +59,12 @@
     - VSCode 菜单 `View / 查看` - `Command Palette / 命令面板` `[ Ctrl+Shift+P ]`
 - `< 开发人员工具 >`
     - VSCode 菜单 `Help / 帮助` - `Toggle Developer Tools / 切换开发人员工具`
+- `< 菜单按钮 >`
+    - VSCode 标题区域按钮, 位于顶部区域, 用于快捷操作文件或项目
 
 1. 连接到计算机
 
-- 打开 `< 命令面板 >` 选择 `AutoJs6: 建立设备连接 (Connect)` `[ Ctrl+Alt+F6 ]`
+- 打开 `< 命令面板 >` 选择 `AutoJs6: 建立设备连接 (Connect)` `[ Ctrl+Alt+F6 ]`, 或点击相应的菜单按钮
 - 使用下述方式之一建立设备连接 (任选其一)
     - `AutoJs6 (客户端) > VSCode (服务端) | 局域网`
         - AutoJs6 侧拉菜单中开启 "客户端模式"
@@ -86,6 +88,7 @@
 
 - 打开 `< 命令面板 >` 查看并执行支持的命令 (快捷键详见下述 "命令" 板块)
 - 如 `AutoJs6: 运行脚本 (Run)` `AutoJs6: 停止所有脚本 (Stop All)` 等
+- 部分功能可通过点击相应的菜单按钮实现
 
 3. 查看日志
 
@@ -148,6 +151,17 @@
 
 ******
 
+# v1.0.10
+
+###### 2024/12/28
+
+* `新增` VSCode 编辑器菜单栏增加支持插件基本操作的图标按钮
+* `新增` VSCode 资源管理器增加支持插件基本操作的右键菜单项
+* `优化` 选择窗口未勾选任何项目时按下回车键将选择光标所在项目
+* `优化` 连接选择窗口标题显示可用的 IP 地址信息兼容更多可用的地址
+* `优化` 使用服务端局域网连接方式时, 将显示全部可用的网络接口并展示详细信息
+* `优化` 新建项目时, 项目配置文件的项目名称及包名后缀自动适配目录名称 (支持拼音转换)
+
 # v1.0.9
 
 ###### 2023/11/15
@@ -163,12 +177,6 @@
 * `修复` 执行任何命令均无效的问题
 
 # v1.0.7
-
-###### 2023/10/30
-
-* `修复` 输入 AutoJs6 服务端地址有效且部分匹配历史记录时无法按输入值建立连接的问题
-* `优化` 增加 AutoJs6 项目实例的必要文件检测及提示
-* `优化` 未命名文件保存到设备时自动识别文件类型并添加扩展名
 
 ##### 更多版本历史可参阅
 
