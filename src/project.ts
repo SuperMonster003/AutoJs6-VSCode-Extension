@@ -86,10 +86,19 @@ export class Project {
     }
 
     // noinspection JSUnusedLocalSymbols
-    fileFilter(relativePath: string, absPath: string, stats: fs.Stats) {
+    fileFilter(relativePath: string, absPath: string, stats: fs.Stats): boolean {
+        // 解析真实路径
+        const realAbsPath = fs.realpathSync(absPath);
         return this.config.ignore.filter((p) => {
             const fullPath = path.join(this.projectDir, p);
-            return absPath.startsWith(fullPath);
+            // 同样解析 ignore 路径对应的真实路径
+            try {
+                const realFullPath = fs.realpathSync(fullPath);
+                return realAbsPath.startsWith(realFullPath);
+            } catch (err) {
+                // 出现错误时忽略该 ignore 配置
+                return false;
+            }
         }).length === 0;
     };
 

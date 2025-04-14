@@ -136,7 +136,7 @@ export class Device extends events.EventEmitter {
         logDebug('## [m] Device.sendHello');
 
         let id = this.id++;
-        let data = { extensionVersion: projectPackage.versionName };
+        let data = { extensionVersion: projectPackage.version };
         if (err) {
             data['errorMessage'] = err;
         }

@@ -4,6 +4,13 @@
 
 ******
 
+# v1.0.12
+
+###### 2025/04/14
+
+* `修复` 服务端模式因版本判断失误导致无法连接的问题 _[`issue #27`](http://vscext-project.autojs6.com/issues/27)_
+* `优化` 新建项目支持使用 `dts-link` 脚本任务自动创建 [AutoJs6 声明文件](http://dts-project.autojs6.com/) 软链接 _[`issue #8`](http://vscext-project.autojs6.com/issues/8)_
+
 # v1.0.11
 
 ###### 2025/04/14

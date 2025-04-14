@@ -19,6 +19,7 @@
     "versionCode": 1,
     "versionName": "1.0.0",
     "ignore": [
+        "/.internal/",
         "/build/",
         "/node_modules/",
         "/out/",

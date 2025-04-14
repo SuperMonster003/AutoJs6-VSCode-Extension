@@ -139,7 +139,7 @@
     - 弹出设备菜单并在指定保存 VSCode 对应脚本的设备
 - 新建项目 (New Project) `[ CTRL+ALT+6 N ]`
     - 选择 (或创建后选择) 一个空文件夹用于新建 AutoJs6 项目
-    - 新建项目后执行 `npm install` 或 `npm run dts` 可完成声明文件部署
+    - 新建项目后执行 `npm run dts-link` 或 `npm run dts` 可完成声明文件部署
 - 运行项目 (Run Project) `[ CTRL+ALT+6 R / Alt+F6 ]`
     - 运行一个 AutoJs6 项目
 - 保存项目到设备 (Save Project) `[ CTRL+ALT+6 S ]`
@@ -150,6 +150,13 @@
 ### 版本历史 (Release Notes)
 
 ******
+
+# v1.0.12
+
+###### 2025/04/14
+
+* `修复` 服务端模式因版本判断失误导致无法连接的问题 _[`issue #27`](http://vscext-project.autojs6.com/issues/27)_
+* `优化` 新建项目支持使用 `dts-link` 脚本任务自动创建 [AutoJs6 声明文件](http://dts-project.autojs6.com/) 软链接 _[`issue #8`](http://vscext-project.autojs6.com/issues/8)_
 
 # v1.0.11
 
@@ -167,14 +174,6 @@
 * `优化` 连接选择窗口标题显示可用的 IP 地址信息兼容更多可用的地址
 * `优化` 使用服务端局域网连接方式时, 将显示全部可用的网络接口并展示详细信息
 * `优化` 新建项目时, 项目配置文件的项目名称及包名后缀自动适配目录名称 (支持拼音转换)
-
-# v1.0.9
-
-###### 2023/11/15
-
-* `修复` 执行 npm install 可能出现 Not Found 的问题 _[`issue #1`](https://github.com/SuperMonster003/AutoJs6-TypeScript-Declarations/issues/1#issuecomment-1758808581)_
-* `修复` 新建项目时存在目录时可能出现文件遗漏复制的问题
-* `优化` 新建项目后执行 npm install 或 npm run dts 可完成声明文件部署
 
 ##### 更多版本历史可参阅
 
