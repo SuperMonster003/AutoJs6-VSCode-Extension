@@ -41,9 +41,11 @@ const PLACEHOLDER_FETCHING_DETAILS_IN_BACKGROUND = '正在后台获取详细信�
 const STRING_YES = '是 (Yes)';
 const STRING_NO = '否 (No)';
 
-export const CONNECTION_TYPE_CLIENT_LAN = 0;
-export const CONNECTION_TYPE_SERVER_LAN = 1;
-export const CONNECTION_TYPE_SERVER_ADB = 2;
+export enum ConnectionType {
+    CLIENT_LAN = 0,
+    SERVER_LAN = 1,
+    SERVER_ADB = 2,
+}
 
 const storageIpAddressBlacklist = [ IP_LOOP_BACK, IP_UNIVERSAL ];
 const regexIpAddress = /^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}(:\d+)?$/;
@@ -361,7 +363,8 @@ export class Extension {
     static readonly commands: Array<keyof Extension> = [
         'viewDocument', 'connect', 'disconnectAll', 'run', 'runWithoutArguments',
         'runOnDevice', 'stop', 'stopAll', 'rerun', 'save', 'saveToDevice',
-        'newUntitledFile', 'newProject', 'runProject', 'saveProject', 'commandsHierarchy',
+        'newUntitledFile', 'newProject', 'runProject', 'runProjectWithoutArguments',
+        'saveProject', 'saveProjectWithoutArguments', 'commandsHierarchy',
     ];
 
     private adb: Adb;
@@ -566,9 +569,9 @@ export class Extension {
                 }
                 devChn.show(true);
                 vscode.window.showInformationMessage(`AutoJs6 设备接入: ${device}`);
-                if (type === CONNECTION_TYPE_SERVER_ADB) {
+                if (type === ConnectionType.SERVER_ADB) {
                     connectedServerAdb.add(device.adbDeviceId);
-                } else if (type === CONNECTION_TYPE_SERVER_LAN) {
+                } else if (type === ConnectionType.SERVER_LAN) {
                     connectedServerLan.add(device.host);
                 }
                 logDebug(connectedServerAdb);
@@ -733,7 +736,7 @@ export class Extension {
         } else {
             folder = Uri.parse(url);
         }
-        if (!this.client.project || this.client.project.folder !== folder) {
+        if (!this.client.project || this.client.project.projectDirUri !== folder) {
             this.client.project && this.client.project.dispose();
             let project = new Project(folder);
             if (Object.getPrototypeOf(project) === null) {
@@ -771,7 +774,7 @@ export class Extension {
             if (!dev) {
                 return;
             }
-            let ports = [ {
+            let ports: ({ src: number; dst: number })[] = [ {
                 src: yield this.findAvailPorts(),
                 dst: Device.defaultClientPort,
             }, {
@@ -788,7 +791,7 @@ export class Extension {
 
                 let idTimeout = setTimeout(() => this.onAdbDeviceConnectTimeout(dev), 5e3);
 
-                this.client.connectTo(IP_LOOP_BACK, ports[0].src, CONNECTION_TYPE_SERVER_ADB, dev.id)
+                this.client.connectTo(IP_LOOP_BACK, ports[0].src, ConnectionType.SERVER_ADB, dev.id)
                     .then(() => clearTimeout(idTimeout));
             } catch (e) {
                 vscode.window.showErrorMessage(e.toString());
@@ -816,8 +819,8 @@ export class Extension {
         return map;
     }
 
-    findAvailPorts() {
-        let findPorts = function () {
+    findAvailPorts(): Promise<number> {
+        let findPorts: () => (portInfo?: { port: number | number[] }) => Promise<number> = function () {
             class Err extends Error {
                 constructor(o: string) {
                     super(o + ' is locked');
@@ -829,14 +832,14 @@ export class Extension {
                 young: new Set,
             };
 
-            const parsePort = (port: { port: number }) => {
+            const parsePort: (portHolder: { port: number }) => Promise<number> = (portHolder: { port: number }) => {
                 return new Promise((resolve, reject) => {
                     let server = net.createServer();
                     server.unref();
                     server.on('error', reject);
-                    server.listen(port, () => {
-                        const { port: t } = server.address() as AddressInfo;
-                        server.close(() => resolve(t));
+                    server.listen(portHolder, () => {
+                        const { port: serverPort } = server.address() as AddressInfo;
+                        server.close(() => resolve(serverPort));
                     });
                 });
             };
@@ -1001,7 +1004,7 @@ export class Extension {
                     host = split[0];
                 }
                 vscode.window.showInformationMessage(`正在连接至 AutoJs6 服务端 (${host})...`);
-                this.client.connectTo(host, port, CONNECTION_TYPE_SERVER_LAN).catch((e) => {
+                this.client.connectTo(host, port, ConnectionType.SERVER_LAN).catch((e) => {
                     logDebug(e);
                     vscode.window.showErrorMessage(`无法连接至 AutoJs6 服务端 (${host})`, '查看解决方案').then((choice) => {
                         if (choice) {
@@ -1307,19 +1310,21 @@ export class Extension {
 
     run(urlOrArgs?: string | Uri) {
         logDebug('run argument: ' + urlOrArgs);
-        if (typeof urlOrArgs === 'object' && urlOrArgs !== null) {
-            if (typeof urlOrArgs.path === 'string') {
-                return this.runFile(urlOrArgs.path);
-            }
-        }
-        if (typeof urlOrArgs === 'string') {
-            return this.runFile(urlOrArgs);
-        }
-        return this.runWithoutArguments();
+        return this.runFile(this.getRefinedUrl(urlOrArgs));
     }
 
     runWithoutArguments() {
-        return this.runFile(undefined);
+        return this.run(undefined);
+    }
+
+    private getRefinedUrl(url?: string | Uri): string | undefined {
+        if (typeof url === 'object' && url !== null && typeof url.path === 'string') {
+            return url.path;
+        }
+        if (typeof url === 'string') {
+            return url;
+        }
+        return undefined;
     }
 
     stop() {
@@ -1430,12 +1435,20 @@ export class Extension {
         return name.toLowerCase();
     }
 
-    runProject(url?: string) {
-        this.sendProjectCommand('run_project', undefined);
+    runProject(url?: string | Uri) {
+        this.sendProjectCommand('run_project', this.getRefinedUrl(url));
     }
 
-    saveProject(url?: string) {
-        this.sendProjectCommand('save_project', undefined);
+    runProjectWithoutArguments() {
+        this.runProject(undefined);
+    }
+
+    saveProject(url?: string | Uri) {
+        this.sendProjectCommand('save_project', this.getRefinedUrl(url));
+    }
+
+    saveProjectWithoutArguments() {
+        this.saveProject(undefined);
     }
 
     commandsHierarchy() {

@@ -8,7 +8,7 @@ import * as project from './project';
 import { Project, ProjectObserver } from './project';
 import { buffToString } from './util';
 import { logDebug } from './extension';
-import { CONNECTION_TYPE_CLIENT_LAN, CONNECTION_TYPE_SERVER_ADB, CONNECTION_TYPE_SERVER_LAN, Extension, ProjectCommands, connectedServerAdb, connectedServerLan } from './extension';
+import { ConnectionType, Extension, ProjectCommands, connectedServerAdb, connectedServerLan } from './extension';
 
 let packageJson: string = fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8');
 let projectPackage = JSON.parse(packageJson);
@@ -31,9 +31,9 @@ const HANDSHAKE_TIMEOUT = 5e3;
 export class Device extends events.EventEmitter {
 
     private versionCode = 0;
+    private versionName: string;
     private id = 1;
     private name: string;
-    private version: string;
     private isAttached = false;
 
     connection: Socket;
@@ -57,16 +57,21 @@ export class Device extends events.EventEmitter {
 
             this.isAttached = true;
             this.name = data.device_name || 'unknown device';
-            this.version = data.app_version;
+            this.versionName = data.app_version;
             this.versionCode = parseInt(data.app_version_code);
             if (this.versionCode < REQUIRED_AUTOJS6_VERSION_CODE) {
                 let releasesUrl = 'https://github.com/SuperMonster003/AutoJs6/releases/';
-                const errMessage = `无法建立连接, 请确认 AutoJs6 版本不低于 ${REQUIRED_AUTOJS6_VERSION_NAME}`;
+                let currentVerInfo = `${this.versionName} (${this.versionCode})`;
+                let requiredVerInfo = `${REQUIRED_AUTOJS6_VERSION_NAME} (${REQUIRED_AUTOJS6_VERSION_CODE})`;
+                let errMessage = `无法建立连接, AutoJs6 版本 ${currentVerInfo} 应不低于 ${requiredVerInfo}`;
+
                 vscode.window.showErrorMessage(errMessage, '查看所有项目版本')
                     .then(choice => choice && vscode.env.openExternal(vscode.Uri.parse(releasesUrl)));
+
                 this.sendHello(errMessage);
                 this.connection.destroy();
                 this.connection = null;
+
                 return;
             }
             this.deviceId = data.device_id;
@@ -131,7 +136,7 @@ export class Device extends events.EventEmitter {
         logDebug('## [m] Device.sendHello');
 
         let id = this.id++;
-        let data = { extensionVersion: projectPackage.version };
+        let data = { extensionVersion: projectPackage.versionName };
         if (err) {
             data['errorMessage'] = err;
         }
@@ -139,7 +144,7 @@ export class Device extends events.EventEmitter {
         return id;
     }
 
-    sendCommand(command, data = {}) {
+    sendCommand(command: keyof Extension, data = {}) {
         logDebug('## [m] Device.sendCommand');
 
         let id = this.id++;
@@ -236,15 +241,15 @@ export class Device extends events.EventEmitter {
                     }
                 }
             })
-            .on('close', (had_error, description) => {
+            .on('close', (had_error: boolean) => {
                 logDebug('on close');
-                logDebug(`closed: {device: ${this}, had_error: ${had_error}, desc: ${description}}`);
+                logDebug(`closed: {device: ${this}, had_error: ${had_error}}`);
                 this.connection = null;
                 this.emit('disconnect');
             });
     }
 
-    onData(dataType, data) {
+    onData(dataType: number, data: Buffer) {
         logDebug('## Device.onData');
         logDebug(`onData: type = ${dataType}, length = ${data.length}, content = ${data}`);
 
@@ -274,9 +279,7 @@ export class Devices extends events.EventEmitter {
 
     private recentDevice: null;
     private serverSocket: Server;
-    private readonly fileFilter: (relativePath, absPath, stats) => (boolean | any);
-
-    isServerSocketNormallyClosed: boolean = false;
+    private readonly fileFilter: (relativePath: string, absPath: string, stats: fs.Stats) => (boolean | any);
 
     constructor() {
         super();
@@ -309,25 +312,25 @@ export class Devices extends events.EventEmitter {
 
         new Device(socket).on('attach', (dev) => {
             logDebug('## on attach (accept)');
-            this.attachDevice(dev, CONNECTION_TYPE_CLIENT_LAN);
+            this.attachDevice(dev, ConnectionType.CLIENT_LAN);
             logDebug('## on attach (accept) end');
         });
 
         logDebug('## Devices.accept end');
     }
 
-    connectTo(host, port, type, adbDeviceId?) {
+    connectTo(host: string, port: number, type: ConnectionType, adbDeviceId?: string) {
         logDebug('## Devices.connectTo');
 
         return new Promise((resolve, reject) => {
             logDebug(`connecting to ${host}:${port}`);
 
-            if (type === CONNECTION_TYPE_SERVER_LAN) {
+            if (type === ConnectionType.SERVER_LAN) {
                 if (connectedServerLan.has(host)) {
                     vscode.window.showWarningMessage(`服务端设备 ${host} 已建立连接 (局域网), 无需重复连接`);
                     return resolve(true);
                 }
-            } else if (type === CONNECTION_TYPE_SERVER_ADB) {
+            } else if (type === ConnectionType.SERVER_ADB) {
                 if (connectedServerAdb.has(adbDeviceId)) {
                     vscode.window.showWarningMessage(`服务端设备 ${adbDeviceId} 已建立连接 (ADB), 无需重复连接`);
                     return resolve(true);
@@ -343,9 +346,9 @@ export class Devices extends events.EventEmitter {
                 device.on('attach', () => {
                     logDebug('## on attach (connectTo)');
                     if (typeof adbDeviceId !== 'undefined') {
-                        this.attachDevice(device, CONNECTION_TYPE_SERVER_ADB);
+                        this.attachDevice(device, ConnectionType.SERVER_ADB);
                     } else {
-                        this.attachDevice(device, CONNECTION_TYPE_SERVER_LAN);
+                        this.attachDevice(device, ConnectionType.SERVER_LAN);
                     }
                     resolve(device);
                 });
@@ -357,7 +360,7 @@ export class Devices extends events.EventEmitter {
         });
     }
 
-    sendProjectCommand(folder, command: ProjectCommands) {
+    sendProjectCommand(folder: string, command: ProjectCommands) {
         logDebug('## Devices.sendProjectCommand');
 
         this.devices.forEach((device) => {
@@ -383,7 +386,7 @@ export class Devices extends events.EventEmitter {
         return this.devices.length > 0;
     }
 
-    sendCommand(command, data = {}) {
+    sendCommand(command: keyof Extension, data = {}) {
         logDebug('## Devices.sendCommand');
 
         this.devices.forEach(device => device.sendCommand(command, data));
@@ -397,7 +400,7 @@ export class Devices extends events.EventEmitter {
         this.recentDevice = null;
     }
 
-    getDevice(id) {
+    getDevice(id: string): Device {
         logDebug('## Devices.getDevice');
 
         if (id === '[recent]') {
@@ -438,7 +441,7 @@ export class Devices extends events.EventEmitter {
         logDebug('## Devices.attachDevice end');
     }
 
-    detachDevice(device) {
+    detachDevice(device: Device) {
         logDebug('## Devices.detachDevice');
 
         this.devices.splice(this.devices.indexOf(device), 1);

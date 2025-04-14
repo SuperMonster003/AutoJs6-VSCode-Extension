@@ -2,7 +2,7 @@
     "name": "autojs6-vscode-ext",
     "displayName": "AutoJs6 VSCode Extension",
     "description": "使用 VSCode 开发 AutoJs6 脚本文件或项目",
-    "version": "1.0.10",
+    "version": "1.0.11",
     "requiredClientVersionName": "6.4.0",
     "requiredClientVersionCode": "2146",
     "publisher": "003",
@@ -137,7 +137,25 @@
                 }
             },
             {
+                "command": "extension.saveProjectWithoutArguments",
+                "title": "保存项目到设备 (Save Project)",
+                "category": "AutoJs6",
+                "icon": {
+                    "light": "assets/icons/save-all.svg",
+                    "dark": "assets/icons-night/save-all.svg"
+                }
+            },
+            {
                 "command": "extension.runProject",
+                "title": "运行项目 (Run Project)",
+                "category": "AutoJs6",
+                "icon": {
+                    "light": "assets/icons/run-all.svg",
+                    "dark": "assets/icons-night/run-all.svg"
+                }
+            },
+            {
+                "command": "extension.runProjectWithoutArguments",
                 "title": "运行项目 (Run Project)",
                 "category": "AutoJs6",
                 "icon": {
@@ -171,11 +189,11 @@
                     "group": "navigation@72"
                 },
                 {
-                    "command": "extension.runProject",
+                    "command": "extension.runProjectWithoutArguments",
                     "group": "navigation@75"
                 },
                 {
-                    "command": "extension.saveProject",
+                    "command": "extension.saveProjectWithoutArguments",
                     "group": "navigation@78"
                 },
                 {
@@ -238,6 +256,14 @@
             "commandPalette": [
                 {
                     "command": "extension.runWithoutArguments",
+                    "when": "false"
+                },
+                {
+                    "command": "extension.runProjectWithoutArguments",
+                    "when": "false"
+                },
+                {
+                    "command": "extension.saveProjectWithoutArguments",
                     "when": "false"
                 }
             ]

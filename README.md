@@ -151,6 +151,12 @@
 
 ******
 
+# v1.0.11
+
+###### 2025/04/14
+
+* `修复` VSCode 编辑器菜单栏运行项目及保存项目按钮功能失效的问题 (Ref to [terwer](https://github.com/terwer)) _[`pr #25`](https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/pull/25)_ _[`issue #26`](http://vscext-project.autojs6.com/issues/26)_ _[`issue #24`](http://vscext-project.autojs6.com/issues/24)_ _[`issue #23`](http://vscext-project.autojs6.com/issues/23)_
+
 # v1.0.10
 
 ###### 2024/12/28
@@ -169,12 +175,6 @@
 * `修复` 执行 npm install 可能出现 Not Found 的问题 _[`issue #1`](https://github.com/SuperMonster003/AutoJs6-TypeScript-Declarations/issues/1#issuecomment-1758808581)_
 * `修复` 新建项目时存在目录时可能出现文件遗漏复制的问题
 * `优化` 新建项目后执行 npm install 或 npm run dts 可完成声明文件部署
-
-# v1.0.8
-
-###### 2023/10/31
-
-* `修复` 执行任何命令均无效的问题
 
 ##### 更多版本历史可参阅
 

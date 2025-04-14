@@ -51,25 +51,34 @@ export class ProjectTemplate {
 
 export class Project {
     config: ProjectConfig;
-    folder: Uri;
+    projectDirUri: Uri;
+    projectDir: string;
 
     private watcher: vscode.FileSystemWatcher;
 
-    constructor(folder: Uri) {
-        this.folder = folder;
+    constructor(projectDirUri: Uri) {
+        this.projectDirUri = projectDirUri;
+        let projectDir = this.projectDir = projectDirUri.fsPath;
 
-        const basePath = this.getBasePath();
-        let projectPath = path.join(basePath, 'project.json');
-        if (!fs.existsSync(projectPath)) {
-            vscode.window.showErrorMessage(`缺少必要的项目配置文件: ${projectPath}`);
+        if (!fs.statSync(projectDir).isDirectory()) {
+            if (path.basename(projectDir) !== 'project.json') {
+                vscode.window.showErrorMessage(`项目初始化路径 "${projectDir}" 需为目录`);
+                return Object.create(null);
+            }
+            projectDir = path.dirname(projectDir);
+        }
+
+        let jsonPath = path.join(projectDir, 'project.json');
+        if (!fs.existsSync(jsonPath)) {
+            vscode.window.showErrorMessage(`缺少必要的项目配置文件: ${jsonPath}`);
             return Object.create(null);
         }
 
-        this.config = ProjectConfig.fromJsonFile(projectPath);
-        this.watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder.fsPath, 'project\.json'));
+        this.config = ProjectConfig.fromJsonFile(jsonPath);
+        this.watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(projectDir, 'project\.json'));
         this.watcher.onDidChange((event) => {
             logDebug('file changed: ', event.fsPath);
-            if (event.fsPath === path.join(this.folder.fsPath, 'project.json')) {
+            if (event.fsPath === path.join(projectDir, 'project.json')) {
                 this.config = ProjectConfig.fromJsonFile(event.fsPath);
                 logDebug('project.json changed: ', this.config);
             }
@@ -79,20 +88,10 @@ export class Project {
     // noinspection JSUnusedLocalSymbols
     fileFilter(relativePath: string, absPath: string, stats: fs.Stats) {
         return this.config.ignore.filter((p) => {
-            const basePath = this.getBasePath();
-            const fullPath = path.join(basePath, p);
+            const fullPath = path.join(this.projectDir, p);
             return absPath.startsWith(fullPath);
         }).length === 0;
     };
-
-    getBasePath() {
-        let basePath = this.folder.fsPath
-        const stats = fs.statSync(this.folder.fsPath);
-        if (stats.isFile()) {
-            basePath = path.dirname(this.folder.fsPath)
-        }
-        return basePath
-    }
 
     dispose() {
         this.watcher.dispose();
@@ -118,7 +117,7 @@ export class ProjectObserver {
                 const zip = archiver('zip');
                 const streamBuffer = new streamBuffers.WritableStreamBuffer();
                 zip.pipe(streamBuffer);
-                fileChanges.modified.forEach((relativePath) => {
+                fileChanges.modified.forEach((relativePath: string) => {
                     zip.append(fs.createReadStream(path.join(this.folder, relativePath)), { name: relativePath });
                 });
                 zip.finalize();
@@ -206,7 +205,7 @@ export class ProjectConfig {
 
     static fromJson(text: string) {
         const config = JSON.parse(text);
-        config.ignore = (config.ignore || []).map(p => path.normalize(p));
+        config.ignore = (config.ignore || []).map((p: string) => path.normalize(p));
         return config;
     }
 }
