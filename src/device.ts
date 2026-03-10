@@ -100,7 +100,7 @@ export class Device extends events.EventEmitter {
         let bytes: Buffer = Buffer.from(JSON.stringify(data), 'utf-8');
         let string = buffToString(bytes);
 
-        let headerBuffer = Buffer.allocUnsafe(SERVER_HEADER_SIZE);
+        let headerBuffer = Buffer.alloc(SERVER_HEADER_SIZE);
         headerBuffer.write(String(string.length), 0);
         headerBuffer.write(String(TYPE_JSON), SERVER_HEADER_SIZE - 2);
 
@@ -118,7 +118,7 @@ export class Device extends events.EventEmitter {
 
         let string = bytes.toString('latin1');
 
-        let headerBuffer = Buffer.allocUnsafe(SERVER_HEADER_SIZE);
+        let headerBuffer = Buffer.alloc(SERVER_HEADER_SIZE); 
         headerBuffer.write(String(string.length), 0);
         headerBuffer.write(String(TYPE_BYTES), SERVER_HEADER_SIZE - 2);
 
@@ -128,6 +128,7 @@ export class Device extends events.EventEmitter {
 
         logDebug(bytes);
         logDebug('## Written bytes ok: ' + string);
+        logDebug('## Written bytes header: ' + headerBuffer);
         logDebug('## Written bytes length: ' + bytes.length);
         logDebug('## Written bytes string length: ' + string.length);
     }
