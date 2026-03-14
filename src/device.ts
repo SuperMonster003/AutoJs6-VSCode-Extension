@@ -1,14 +1,12 @@
-import * as net from 'net';
-import * as fs from 'fs';
-import * as path from 'path';
-import { Server, Socket } from 'net';
 import * as events from 'events';
-import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as net from 'net';
+import * as path from 'path';
 import * as project from './project';
+import * as vscode from 'vscode';
 import { Project, ProjectObserver } from './project';
-import { buffToString } from './util';
-import { logDebug } from './extension';
-import { ConnectionType, Extension, ProjectCommands, connectedServerAdb, connectedServerLan } from './extension';
+import { Server, Socket } from 'net';
+import { connectedServerAdb, connectedServerLan, ConnectionType, Extension, logDebug, ProjectCommands } from './extension';
 
 let packageJson: string = fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8');
 let projectPackage = JSON.parse(packageJson);
@@ -16,11 +14,14 @@ let projectPackage = JSON.parse(packageJson);
 export const REQUIRED_AUTOJS6_VERSION_NAME = projectPackage['requiredClientVersionName'];
 export const REQUIRED_AUTOJS6_VERSION_CODE = parseInt(projectPackage['requiredClientVersionCode']) || -1;
 
-const SERVER_HEADER_SIZE = 16;
-const CLIENT_HEADER_SIZE = 8;
+const HEADER_SIZE = 8;
 
 const TYPE_JSON = 1;
 const TYPE_BYTES = 2;
+
+// Limit a single frame size to prevent memory explosion on desync.
+// zh-CN: 限制单帧最大长度, 防止失步后内存膨胀.
+const MAX_FRAME_SIZE = 64 * 1024 * 1024;
 
 const LISTENING_PORT = 6347;
 const CLIENT_PORT = 7347;
@@ -59,6 +60,8 @@ export class Device extends events.EventEmitter {
             this.name = data.device_name || 'unknown device';
             this.versionName = data.app_version;
             this.versionCode = parseInt(data.app_version_code);
+            logDebug(`AutoJs6 version: ${this.versionName} (${this.versionCode})`);
+            logDebug(`Required AutoJs6 version: ${REQUIRED_AUTOJS6_VERSION_NAME} (${REQUIRED_AUTOJS6_VERSION_CODE})`);
             if (this.versionCode < REQUIRED_AUTOJS6_VERSION_CODE) {
                 let releasesUrl = 'https://github.com/SuperMonster003/AutoJs6/releases/';
                 let currentVerInfo = `${this.versionName} (${this.versionCode})`;
@@ -97,39 +100,38 @@ export class Device extends events.EventEmitter {
     sendJson(data: object) {
         logDebug('## [m] Device.sendUTF8');
 
-        let bytes: Buffer = Buffer.from(JSON.stringify(data), 'utf-8');
-        let string = buffToString(bytes);
+        const payload = Buffer.from(JSON.stringify(data), 'utf-8');
 
-        let headerBuffer = Buffer.allocUnsafe(SERVER_HEADER_SIZE);
-        headerBuffer.write(String(string.length), 0);
-        headerBuffer.write(String(TYPE_JSON), SERVER_HEADER_SIZE - 2);
+        // Use int32BE header for deterministic framing.
+        // zh-CN: 使用 int32BE 头实现确定性分帧.
+        const header = Buffer.allocUnsafe(HEADER_SIZE);
+        header.writeInt32BE(payload.length, 0);
+        header.writeInt32BE(TYPE_JSON, 4);
 
-        this.connection.write(headerBuffer);
-        this.connection.write(string);
-        // this.connection.write('\r\n');
+        this.connection.write(header);
+        this.connection.write(payload);
 
-        logDebug('## Written json ok: ' + string);
-        logDebug('## Written json length: ' + bytes.length);
-        logDebug('## Written json string length: ' + string.length);
+        logDebug('## Written json ok: ' + payload.toString('utf-8'));
+        logDebug('## Written json length: ' + payload.length);
+        logDebug('## Written json string length: ' + payload.toString('utf-8').length);
     }
 
     sendBytes(bytes: Buffer) {
         logDebug('## [m] Device.sendBytes');
 
-        let string = bytes.toString('latin1');
+        // Use int32BE header for deterministic framing.
+        // zh-CN: 使用 int32BE 头实现确定性分帧.
+        const header = Buffer.allocUnsafe(HEADER_SIZE);
+        header.writeInt32BE(bytes.length, 0);
+        header.writeInt32BE(TYPE_BYTES, 4);
 
-        let headerBuffer = Buffer.allocUnsafe(SERVER_HEADER_SIZE);
-        headerBuffer.write(String(string.length), 0);
-        headerBuffer.write(String(TYPE_BYTES), SERVER_HEADER_SIZE - 2);
-
-        this.connection.write(headerBuffer);
-        this.connection.write(string);
-        // this.connection.write('\r\n');
+        this.connection.write(header);
+        this.connection.write(bytes);
 
         logDebug(bytes);
-        logDebug('## Written bytes ok: ' + string);
+        logDebug('## Written bytes ok: ' + bytes.toString('utf-8'));
         logDebug('## Written bytes length: ' + bytes.length);
-        logDebug('## Written bytes string length: ' + string.length);
+        logDebug('## Written bytes string length: ' + bytes.toString('utf-8').length);
     }
 
     sendHello(err?: string) {
@@ -165,67 +167,45 @@ export class Device extends events.EventEmitter {
     read(socket: Socket) {
         logDebug('## Device.read');
 
-        let DEFAULT_DATA_LENGTH = -1;
-        let DEFAULT_DATA_TYPE = -1;
-
-        let _ = {
-            isLastDataComplete: true,
-            jointData: <Buffer>Buffer.allocUnsafe(0),
-            parsedDataType: DEFAULT_DATA_TYPE,
-            onData(chunk: Buffer, parser: (dataType: number, data: Buffer) => void) {
-                let offset = 0;
-                let expectedChunkLen = ( /* @IIFE */ () => {
-                    if (this.isLastDataComplete) {
-                        this.parseHeader(chunk);
-                        offset += CLIENT_HEADER_SIZE;
-                        return CLIENT_HEADER_SIZE + this.parsedDataLength;
-                    }
-                    return this.parsedDataLength - this.getJointDataLength();
-                })();
-
-                this.joinData(chunk.slice(offset, expectedChunkLen));
-
-                if (chunk.length >= expectedChunkLen) {
-                    this.isLastDataComplete = true;
-                    this.parseFullData(parser);
-                    this.reset();
-
-                    if (chunk.length > expectedChunkLen) {
-                        let remaining = chunk.slice(expectedChunkLen);
-                        logDebug(`remaining len: ${remaining.length}`);
-                        this.onData(remaining, parser);
-                    }
-                } else {
-                    this.isLastDataComplete = false;
-                }
-            },
-            getJointDataLength() {
-                return this.jointData.length;
-            },
-            joinData(data: Buffer): void {
-                logDebug(`length of data to be joint: ${data.length}`);
-                this.jointData = Buffer.concat([ this.jointData, data ]);
-            },
-            parseHeader(chunk: Buffer) {
-                this.parsedDataLength = chunk.readInt32BE(0);
-                this.parsedDataType = chunk.readInt32BE(4);
-                logDebug(`dataLength: ${this.parsedDataLength}, dataType: ${this.parsedDataType}`);
-            },
-            parseFullData(parser: (dataType: number, data: Buffer) => void) {
-                logDebug(`parsing full data... (len: ${this.jointData.length})`);
-                parser(this.parsedDataType, this.jointData);
-            },
-            reset() {
-                this.jointData = <Buffer>Buffer.allocUnsafe(0);
-                this.parsedDataLength = DEFAULT_DATA_LENGTH;
-                this.parsedDataType = DEFAULT_DATA_TYPE;
-            },
-        };
+        // Accumulated unread bytes from TCP stream.
+        // zh-CN: TCP 流的累积未解析字节.
+        let buffer: Buffer = Buffer.alloc(0);
 
         socket
             .on('data', (chunk: Buffer) => {
                 logDebug('on data');
-                _.onData(chunk, this.onData.bind(this));
+
+                buffer = Buffer.concat([ buffer, chunk ]);
+
+                while (buffer.length >= HEADER_SIZE) {
+                    const dataLength = buffer.readInt32BE(0);
+                    const dataType = buffer.readInt32BE(4);
+
+                    logDebug(`dataLength: ${dataLength}, dataType: ${dataType}`);
+
+                    // Validate header fields to detect desync early.
+                    // zh-CN: 校验头部字段, 尽早发现失步.
+                    const isTypeValid = dataType === TYPE_JSON || dataType === TYPE_BYTES;
+                    const isLengthValid = dataLength >= 0 && dataLength <= MAX_FRAME_SIZE;
+                    if (!isTypeValid || !isLengthValid) {
+                        logDebug(`Invalid frame header, destroy socket: {len: ${dataLength}, type: ${dataType}}`);
+                        socket.destroy();
+                        buffer = Buffer.alloc(0);
+                        return;
+                    }
+
+                    const frameTotalLen = HEADER_SIZE + dataLength;
+                    if (buffer.length < frameTotalLen) {
+                        // Not enough data yet, wait for next chunk.
+                        // zh-CN: 数据不足, 等待下一个 chunk.
+                        break;
+                    }
+
+                    const payload = buffer.slice(HEADER_SIZE, frameTotalLen);
+                    buffer = buffer.slice(frameTotalLen);
+
+                    this.onData(dataType, payload);
+                }
             })
             .on('message', (message) => {
                 logDebug('on message');

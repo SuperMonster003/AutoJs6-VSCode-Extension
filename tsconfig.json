@@ -5,11 +5,8 @@
         "outDir": "out",
         "rootDir": "src",
         "lib": [
-            "es5",
-            "es6",
-            "dom",
-            "es2015",
-            "es2020"
+            "es2020",
+            "dom"
         ],
         "types": [
             "node",
@@ -23,11 +20,20 @@
             "node_modules/@autojs",
             "node_modules/@sm003/autojs6-dts/declarations"
         ],
-        "allowJs": true
+        "allowJs": true,
+        "skipLibCheck": true
     },
+    "include": [
+        "src/**/*.ts",
+        "src/**/*.tsx",
+        "src/**/*.js"
+    ],
     "exclude": [
-        "declarations",
         "node_modules",
-        ".vscode-test"
+        "out",
+        ".vscode-test",
+        "assets",
+        "test-*.js",
+        "example-*.js"
     ]
 }
