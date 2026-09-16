@@ -1,5 +1,6 @@
 'use strict';
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as http from 'http';
 import * as net from 'net';
@@ -26,6 +27,13 @@ const IP_UNIVERSAL = '0.0.0.0';
 const STORAGE_KEY_RECORDS = 'autojs6.devices';
 const STORAGE_KEY_TARGETS = 'autojs6.lastTargets';
 const STORAGE_IP_BLACKLIST = [ IP_LOOP_BACK, IP_UNIVERSAL ];
+const STORAGE_KEY_TRUSTED = 'autojs6.trustedDevices';
+/** Lifetime of a QR pairing token. zh-CN: 二维码配对令牌有效期. */
+const QR_TOKEN_TTL_MS = 10 * 60_000;
+/** No answer to the pairing prompt counts as deny. zh-CN: 配对提示超时视为拒绝. */
+const PAIRING_PROMPT_TIMEOUT_MS = 90_000;
+/** How long the LAN picker shows the busy indicator while browsing mDNS. zh-CN: 局域网选择器显示搜索状态的时长. */
+const DISCOVERY_BUSY_MS = 8_000;
 
 const PREFIX = {
     connect: '[ 连接 ]',
@@ -56,6 +64,22 @@ interface IpRecord {
 /** A connection the extension initiated, persisted so it can be restored on startup. zh-CN: 插件主动建立的连接, 持久化以便启动时恢复. */
 interface SavedTarget {
     type: ConnectionType;
+/** A device the person chose to remember (roadmap 4.4). zh-CN: 用户选择记住的设备 (roadmap 4.4). */
+interface TrustedDevice {
+    name: string;
+    ts: number;
+}
+
+interface LanPickItem extends vscode.QuickPickItem {
+    endpoint?: string;
+    clear?: boolean;
+}
+
+function lanItemMatches(item: vscode.QuickPickItem, value: string): boolean {
+    const v = value.toLowerCase();
+    return [ item.label, item.description, item.detail ].some(s => !!s && s.toLowerCase().includes(v));
+}
+
     host: string;
     port: number;
     adbDeviceId?: string;
@@ -119,14 +143,14 @@ class CommandHttpServer implements vscode.Disposable {
     }
 }
 
-export class Extension implements vscode.Disposable {
+export class Extension implements vscode.Disposable, PairingHandler {
 
     static readonly commands: Array<keyof Extension> = [
         'viewDocument', 'connect', 'disconnectAll', 'disconnectDevice', 'selectDevice', 'showQrCode',
         'run', 'runWithoutArguments', 'runOnDevice', 'stop', 'stopAll', 'rerun',
         'save', 'saveToDevice', 'newUntitledFile', 'newProject',
         'runProject', 'runProjectWithoutArguments', 'saveProject', 'saveProjectWithoutArguments', 'resyncProject',
-        'reconnect', 'cancelReconnect',
+        'reconnect', 'cancelReconnect', 'manageTrustedDevices',
     ];
 
     readonly devices = new Devices(() => Settings.connectionOptions);
@@ -160,6 +184,7 @@ export class Extension implements vscode.Disposable {
         this.startServers();
         this.restoreConnections();
     }
+        this.devices.pairing = this;
 
     /* Lifecycle. zh-CN: 生命周期. */
 
@@ -211,7 +236,11 @@ export class Extension implements vscode.Disposable {
             .on('log', (device: Device, text: string) => this.channels.append(device.deviceId, text))
             .on('command', (device: Device, param: DeviceCommandParam) => this.onDeviceCommand(device, param))
             .on('reject', (device: Device, message: string) => {
-                showErrorWithAction(message, '查看所有项目版本', () => vscode.env.openExternal(Uri.parse('https://github.com/SuperMonster003/AutoJs6/releases/')));
+                if (message.includes('版本')) {
+                    showErrorWithAction(message, '查看所有项目版本', () => vscode.env.openExternal(Uri.parse('https://github.com/SuperMonster003/AutoJs6/releases/')));
+                } else {
+                    vscode.window.showWarningMessage(message);
+                }
             })
             .on('reconnecting', () => this.updateStatusBar())
             .on('reconnected', (device: Device, session: ReconnectSession) => {
@@ -614,36 +643,35 @@ export class Extension implements vscode.Disposable {
         if (!this.devices.isListening) {
             throw new DeviceError(`端口 ${Settings.serverPort} 未在监听 (可能被其他窗口占用), 请修改 autojs6.server.port 或使用其他连接方式`);
         }
-        await QrCodePanel.show(this.context, this.devices.listeningPort, util.getBasicNetworkInterfaces(), typeof preferredIp === 'string' ? preferredIp : undefined);
+        await QrCodePanel.show(this.context, this.devices.listeningPort, util.getBasicNetworkInterfaces(), typeof preferredIp === 'string' ? preferredIp : undefined, () => this.issueQrToken());
     }
 
     private async connectToServerLanFlow() {
         const records = this.loadRecords();
-        const items: vscode.QuickPickItem[] = records.map(r => ({
+        const recordItems: LanPickItem[] = records.map(r => ({
             label: `${PREFIX.record} - ${r.ip}`,
             detail: r.ts ? `最近连接: ${util.formatTimestamp(r.ts)}` : undefined,
         }));
         if (records.length > 0) {
-            items.push({ label: LABEL.recordClear, detail: '清除保存在本地的全部 IP 地址记录' });
+            recordItems.push({ label: LABEL.recordClear, detail: '清除保存在本地的全部 IP 地址记录', clear: true });
         }
         const picked = await showPick({
             title: '连接到 AutoJs6 服务端',
             placeholder: `输入 IP 地址或域名 (可带端口, 默认 ${Settings.clientPort}), 按回车 (Enter) 键建立连接`,
+            endpoint: r.ip,
             items,
             acceptInput: true,
         });
         if (picked === undefined) return;
-        if (typeof picked === 'object') {
-            if (picked.label === LABEL.recordClear) {
-                if (await confirm('确认清除所有已保存的记录吗')) {
-                    this.saveRecords([]);
-                    vscode.window.showInformationMessage(`清理完成, 共计 ${records.length} 项`);
-                }
-                return;
+        if (typeof picked === 'string') return this.connectToServerLan(picked);
+        if (picked.clear) {
+            if (await confirm('确认清除所有已保存的记录吗')) {
+                this.saveRecords([]);
+                vscode.window.showInformationMessage(`清理完成, 共计 ${records.length} 项`);
             }
-            return this.connectToServerLan(picked.label.replace(`${PREFIX.record} - `, ''));
+            return;
         }
-        return this.connectToServerLan(picked);
+        if (picked.endpoint) return this.connectToServerLan(picked.endpoint);
     }
 
     async connectToServerLan(input: string) {
@@ -725,6 +753,101 @@ export class Extension implements vscode.Disposable {
             throw new DeviceError(offline.length > 0
                 ? `未发现可用的 ADB 设备 (${offline.map(d => `${d.id}: ${d.state}`).join(', ')}), 请在设备上确认 USB 调试授权`
                 : '未发现通过 ADB 连接的设备');
+    /* Pairing (roadmap 4.4): QR tokens, trusted devices and the confirmation prompt. zh-CN: 配对: 二维码令牌 / 已信任设备 / 确认提示. */
+
+    private readonly qrTokens = new Map<string, number>();
+
+    /** Issue a one-time token for the connection QR code. zh-CN: 为连接二维码签发一次性令牌. */
+    issueQrToken(): string {
+        this.pruneQrTokens();
+        const token = crypto.randomBytes(9).toString('base64url');
+        this.qrTokens.set(token, Date.now() + QR_TOKEN_TTL_MS);
+        return token;
+    }
+
+    private pruneQrTokens() {
+        const now = Date.now();
+        for (const [ token, expiry ] of this.qrTokens) {
+            if (expiry <= now) {
+                this.qrTokens.delete(token);
+            }
+        }
+    }
+
+    consumeToken(token: string, device: Device): boolean {
+        this.pruneQrTokens();
+        if (!this.qrTokens.has(token)) {
+            logDebug(`unknown or expired QR token from ${device}`);
+            return false;
+        }
+        this.qrTokens.delete(token);
+        logDebug(`QR token accepted from ${device}`);
+        return true;
+    }
+
+    private loadTrusted(): Record<string, TrustedDevice> {
+        return this.context.globalState.get<Record<string, TrustedDevice>>(STORAGE_KEY_TRUSTED, {}) || {};
+    }
+
+    isTrusted(device: Device): boolean {
+        return !!device.deviceId && !!this.loadTrusted()[device.deviceId];
+    }
+
+    remember(device: Device): void {
+        if (!device.deviceId) return;
+        const trusted = this.loadTrusted();
+        trusted[device.deviceId] = { name: device.name, ts: Date.now() };
+        this.context.globalState.update(STORAGE_KEY_TRUSTED, trusted);
+    }
+
+    /**
+     * Ask the person whether an unknown device may connect; dismissing the prompt or ignoring it for
+     * `PAIRING_PROMPT_TIMEOUT_MS` counts as deny.
+     * zh-CN: 询问用户是否允许未知设备连接; 关闭提示或超时未响应视为拒绝.
+     */
+    confirm(device: Device): Promise<PairingVerdict> {
+        if (!Settings.confirmUnknownDevices) {
+            return Promise.resolve('allow');
+        }
+        const trust = '允许并记住';
+        const once = '仅本次允许';
+        const deny = '拒绝';
+        return new Promise<PairingVerdict>((resolve) => {
+            let settled = false;
+            const finish = (verdict: PairingVerdict) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                resolve(verdict);
+            };
+            const timer = setTimeout(() => finish('deny'), PAIRING_PROMPT_TIMEOUT_MS);
+            const message = `AutoJs6 设备 "${device.name}" (${device.remoteAddress}) 请求连接到本机 (${device.versionName || '未知版本'}, ID ${device.deviceId.slice(0, 8) || '?'}). 通过扫描二维码连接的设备无需确认.`;
+            vscode.window.showInformationMessage(message, trust, once, deny).then(
+                (choice) => finish(choice === trust ? 'trust' : choice === once ? 'allow' : 'deny'),
+                () => finish('deny'),
+            );
+        });
+    }
+
+    /** List trusted devices and remove the selected ones. zh-CN: 列出已信任设备并移除所选项. */
+    async manageTrustedDevices() {
+        const trusted = this.loadTrusted();
+        const ids = Object.keys(trusted).sort((a, b) => (trusted[b].ts || 0) - (trusted[a].ts || 0));
+        if (ids.length === 0) {
+            vscode.window.showInformationMessage('暂无已信任的 AutoJs6 设备 (扫码连接的设备, 或在连接提示中选择 "允许并记住" 的设备会出现在这里)');
+            return;
+        }
+        const picked = await showMultiPick({
+            title: '已信任的 AutoJs6 设备',
+            placeholder: '勾选要移除信任的设备, 按回车 (Enter) 键确认',
+            items: ids.map(id => ({ label: trusted[id].name || id, description: id, detail: `信任时间: ${util.formatTimestamp(trusted[id].ts)}` })),
+        });
+        if (!picked || picked.length === 0) return;
+        picked.forEach(item => delete trusted[item.description || '']);
+        await this.context.globalState.update(STORAGE_KEY_TRUSTED, trusted);
+        vscode.window.showInformationMessage(`已移除 ${picked.length} 台设备的信任, 下次连接时将重新询问`);
+    }
+
         }
         const picked = await showPick({
             title: '连接到 AutoJs6 服务端 (ADB)',

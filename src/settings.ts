@@ -44,6 +44,16 @@ export class Settings {
         return Settings.config.get<string>('http.host', '127.0.0.1') || '127.0.0.1';
     }
 
+    /** Ask before an unknown device attaches (roadmap 4.4). zh-CN: 未知设备接入前先询问. */
+    static get confirmUnknownDevices(): boolean {
+        return Settings.config.get<boolean>('server.confirmUnknownDevices', true);
+    }
+
+    /** Browse `_autojs6._tcp` via mDNS when connecting (roadmap 3.10). zh-CN: 连接时通过 mDNS 搜索设备. */
+    static get discoveryEnabled(): boolean {
+        return Settings.config.get<boolean>('discovery.enabled', true);
+    }
+
     static get adbPath(): string {
         return (Settings.config.get<string>('adb.path', '') || '').trim();
     }

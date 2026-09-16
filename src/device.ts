@@ -12,6 +12,8 @@ import {
     encodeBytesFrame,
     encodeJsonFrame,
     ExtensionHelloData,
+    EXTENSION_FEATURES,
+    FEATURE,
     FRAME_TYPE_JSON,
     FrameParseError,
     FrameParser,
@@ -132,6 +134,22 @@ export const CLOSE_REASON = {
     HANDSHAKE: 'handshake timed out',
 } as const;
 
+export type PairingVerdict = 'allow' | 'trust' | 'deny';
+
+/**
+ * Decides whether an incoming (client mode) AutoJs6 device may attach (roadmap 4.4). Implemented by the extension
+ * entry (QR tokens, trusted device list, confirmation prompt).
+ * zh-CN: 决定客户端模式接入的 AutoJs6 设备能否连接 (roadmap 4.4); 由插件入口实现 (二维码令牌 / 信任列表 / 确认提示).
+ */
+export interface PairingHandler {
+    /** Validate and burn a one-time QR token. zh-CN: 校验并作废一次性二维码令牌. */
+    consumeToken(token: string, device: Device): boolean;
+    isTrusted(device: Device): boolean;
+    /** Ask the person; should resolve `deny` when nobody answers. zh-CN: 询问用户; 无人响应时应返回 deny. */
+    confirm(device: Device): Promise<PairingVerdict>;
+    remember(device: Device): void;
+}
+
 /**
  * A single AutoJs6 connection.
  * zh-CN: 单个 AutoJs6 连接.
@@ -142,6 +160,12 @@ export class Device extends events.EventEmitter {
 
     name = 'unknown device';
     deviceId = '';
+    /** Capabilities announced by the device (AutoJs6 6.8.0+). zh-CN: 设备声明的能力. */
+    features: string[] = [];
+    /** Set for incoming devices; decides whether an unknown device may attach (roadmap 4.4). zh-CN: 配对处理器. */
+    pairing: PairingHandler | null = null;
+    /** `true` while waiting for the person's approval. zh-CN: 等待用户确认期间为 true. */
+    pairingPending = false;
     versionName = '';
     versionCode = 0;
     protocolVersion = 1;
@@ -314,18 +338,31 @@ export class Device extends events.EventEmitter {
         this.versionCode = parseInt(String(data.app_version_code)) || 0;
         this.protocolVersion = parseInt(String(data.protocol_version)) || 1;
 
+        this.features = Array.isArray(data.features) ? data.features.map(String) : [];
+
         if (this.versionCode < REQUIRED_AUTOJS6_VERSION_CODE) {
             const current = `${this.versionName} (${this.versionCode})`;
             const required = `${REQUIRED_AUTOJS6_VERSION_NAME} (${REQUIRED_AUTOJS6_VERSION_CODE})`;
-            const message = `无法建立连接, AutoJs6 版本 ${current} 应不低于 ${required}`;
-            this.sendHello(message);
-            this.closeReason = message;
-            this.emit('reject', message);
-            // Give the message a chance to flush before closing. zh-CN: 留出时间发送拒绝信息.
-            setTimeout(() => this.destroy(), 300);
+            this.rejectHello(`无法建立连接, AutoJs6 版本 ${current} 应不低于 ${required}`);
             return;
         }
 
+        // Pairing (roadmap 4.4): an incoming device attaches at once when it is trusted or carries a valid QR token,
+        // otherwise the person is asked first.
+        // zh-CN: 配对 (roadmap 4.4): 接入设备已受信任或持有效二维码令牌时直接连接, 否则先询问用户.
+        const pairing = this.pairing;
+        if (pairing && this.target === ConnectionType.CLIENT_LAN) {
+            if (data.qr_token && pairing.consumeToken(String(data.qr_token), this)) {
+                pairing.remember(this);
+            } else if (!pairing.isTrusted(this)) {
+                this.askForApproval(pairing);
+                return;
+            }
+        }
+        this.acceptHello();
+    }
+
+    private acceptHello() {
         this.sendHello();
         this.isAttached = true;
         if (this.handshakeTimer) {
@@ -334,6 +371,47 @@ export class Device extends events.EventEmitter {
         }
         this.startHeartbeat();
         this.emit('attach', this);
+    }
+
+    private rejectHello(message: string) {
+        this.sendHello(message);
+        this.closeReason = message;
+        this.emit('reject', message);
+        // Give the message a chance to flush before closing. zh-CN: 留出时间发送拒绝信息.
+        setTimeout(() => this.destroy(), 300);
+    }
+
+    private askForApproval(pairing: PairingHandler) {
+        this.pairingPending = true;
+        if (this.handshakeTimer) {
+            clearTimeout(this.handshakeTimer);
+            this.handshakeTimer = null;
+        }
+        // AutoJs6 6.8.0+ shows "waiting for approval" instead of running into its handshake timeout.
+        // zh-CN: AutoJs6 6.8.0+ 据此显示 "等待确认" 而非触发握手超时.
+        if (this.hasFeature(FEATURE.PAIRING)) {
+            this.sendHello(undefined, true);
+        }
+        logDebug(`waiting for approval of ${this}`);
+        pairing.confirm(this).then((verdict) => {
+            this.pairingPending = false;
+            if (!this.socket || this.socket.destroyed) {
+                return;
+            }
+            if (verdict === 'deny') {
+                this.rejectHello(`已拒绝设备 ${this.name} 的连接请求`);
+                return;
+            }
+            if (verdict === 'trust') {
+                pairing.remember(this);
+            }
+            this.acceptHello();
+        }, (e) => {
+            this.pairingPending = false;
+            if (this.socket && !this.socket.destroyed) {
+                this.rejectHello(`确认设备 ${this.name} 时出错: ${e}`);
+            }
+        });
     }
 
     private onResponse(message: Message<ResponseData>) {
@@ -419,16 +497,24 @@ export class Device extends events.EventEmitter {
         return this.write(encodeBytesFrame(bytes));
     }
 
-    sendHello(errorMessage?: string) {
+    /** Whether the device announced a capability (see `FEATURE`). zh-CN: 设备是否声明了某项能力. */
+    hasFeature(name: string): boolean {
+        return this.features.includes(name);
+    }
+
+    sendHello(errorMessage?: string, pending = false) {
         const data: ExtensionHelloData = {
             extensionVersion: EXTENSION_VERSION,
             protocolVersion: PROTOCOL_VERSION,
-            features: [ 'heartbeat', 'request', 'fs', 'bye' ],
+            features: EXTENSION_FEATURES.slice(),
             name: os.hostname(),
             platform: process.platform,
         };
         if (errorMessage) {
             data.errorMessage = errorMessage;
+        }
+        if (pending) {
+            data.pending = true;
         }
         this.sendJson({ type: MessageType.HELLO, data });
     }
@@ -514,6 +600,8 @@ export interface ReconnectSession {
 export class Devices extends events.EventEmitter {
 
     readonly devices: Device[] = [];
+    /** Applied to every incoming device (roadmap 4.4). zh-CN: 应用于每个接入设备的配对处理器. */
+    pairing: PairingHandler | null = null;
 
     private server: net.Server | null = null;
     private serverPort = 0;
@@ -579,6 +667,7 @@ export class Devices extends events.EventEmitter {
         logDebug(`accepted connection from ${socket.remoteAddress}:${socket.remotePort}`);
         socket.on('error', (e) => logDebug('accepted socket error:', e));
         const device = new Device(socket, ConnectionType.CLIENT_LAN, null, this.options);
+        device.pairing = this.pairing;
         device.on('attach', () => this.attachDevice(device));
         device.on('reject', (message: string) => this.emit('reject', device, message));
     }

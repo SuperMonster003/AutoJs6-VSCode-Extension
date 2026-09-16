@@ -62,6 +62,10 @@ export interface HelloData {
     app_version: string;
     app_version_code: string | number;
     protocol_version?: number;
+    /** Capabilities advertised by AutoJs6 6.8.0+ (e.g. `fs.chunked`, `pairing`). zh-CN: AutoJs6 6.8.0+ 声明的能力. */
+    features?: string[];
+    /** One-time token copied from the connection QR code (roadmap 4.4). zh-CN: 来自连接二维码的一次性令牌. */
+    qr_token?: string;
 }
 
 export interface LogData {
@@ -77,7 +81,30 @@ export interface ExtensionHelloData {
     name?: string;
     platform?: string;
     errorMessage?: string;
+    /** `true` while the extension waits for the person to approve the device. zh-CN: 等待用户确认设备期间为 true. */
+    pending?: boolean;
 }
+
+/** Capability names exchanged in hello frames. zh-CN: hello 帧中交换的能力名称. */
+export const FEATURE = {
+    HEARTBEAT: 'heartbeat',
+    REQUEST: 'request',
+    FS: 'fs',
+    BYE: 'bye',
+    /** `fs.read` accepts `offset`/`length` and `fs.write` accepts `append` (roadmap 5.8). zh-CN: 支持分块读写. */
+    FS_CHUNKED: 'fs.chunked',
+    /** The peer understands the `pending` hello and `qr_token` (roadmap 4.4). zh-CN: 支持配对确认与二维码令牌. */
+    PAIRING: 'pairing',
+} as const;
+
+export const EXTENSION_FEATURES: string[] = [ FEATURE.HEARTBEAT, FEATURE.REQUEST, FEATURE.FS, FEATURE.BYE, FEATURE.FS_CHUNKED, FEATURE.PAIRING ];
+
+/** Piece size of chunked file transfers. zh-CN: 分块传输的块大小. */
+export const FS_CHUNK_SIZE = 1024 * 1024;
+
+/** mDNS service advertised by AutoJs6 server mode (`_autojs6._tcp`). zh-CN: AutoJs6 服务端模式广播的 mDNS 服务. */
+export const MDNS_SERVICE_TYPE = 'autojs6';
+export const MDNS_SERVICE_PROTOCOL = 'tcp';
 
 export interface ResponseData<T = any> {
     ok: boolean;
@@ -242,6 +269,8 @@ export interface QrConnectPayload {
     name?: string;
     /** Alternative hosts. zh-CN: 备选地址. */
     alt?: string[];
+    /** One-time pairing token (roadmap 4.4). zh-CN: 一次性配对令牌. */
+    token?: string;
 }
 
 /**
@@ -254,6 +283,7 @@ export function buildQrConnectPayload(payload: QrConnectPayload): string {
     params.set('port', String(payload.port));
     if (payload.name) params.set('name', payload.name);
     if (payload.alt && payload.alt.length > 0) params.set('alt', payload.alt.join(','));
+    if (payload.token) params.set('token', payload.token);
     params.set('v', String(PROTOCOL_VERSION));
     return `${QR_SCHEME}://connect?${params.toString()}`;
 }
@@ -273,7 +303,10 @@ export function parseQrConnectPayload(text: string, defaultPort: number = DEFAUL
         if (!host) return null;
         const port = parseInt(params.get('port') || '', 10) || defaultPort;
         const alt = (params.get('alt') || '').split(',').map(x => x.trim()).filter(Boolean);
-        return { host, port, name: params.get('name') || undefined, alt: alt.length ? alt : undefined };
+        const payload: QrConnectPayload = { host, port, name: params.get('name') || undefined, alt: alt.length ? alt : undefined };
+        const token = params.get('token');
+        if (token) payload.token = token;
+        return payload;
     }
     const endpoint = parseEndpoint(s, defaultPort);
     return endpoint ? { host: endpoint.host, port: endpoint.port } : null;

@@ -15,8 +15,12 @@ const STORAGE_KEY_SIZE = 'autojs6.qrcode.size';
 export class QrCodePanel {
 
     private static current: QrCodePanel | null = null;
+    private static tokenProvider: (() => string) | null = null;
 
-    static async show(context: vscode.ExtensionContext, port: number, interfaces: util.NIDetails[], preferredIp?: string) {
+    static async show(context: vscode.ExtensionContext, port: number, interfaces: util.NIDetails[], preferredIp?: string, tokenProvider?: () => string) {
+        if (tokenProvider) {
+            QrCodePanel.tokenProvider = tokenProvider;
+        }
         if (QrCodePanel.current) {
             QrCodePanel.current.panel.reveal();
             await QrCodePanel.current.update(port, interfaces, preferredIp);
@@ -52,6 +56,9 @@ export class QrCodePanel {
     private detailsLoaded = false;
     private size: number = QrCodePanel.context?.globalState.get<number>(STORAGE_KEY_SIZE, DEFAULT_QR_SIZE) ?? DEFAULT_QR_SIZE;
 
+    /** One-time pairing token inside the current code; renewed on refresh (roadmap 4.4). zh-CN: 当前二维码中的一次性配对令牌, 刷新时更新. */
+    private token = '';
+
     private constructor(private readonly panel: vscode.WebviewPanel, port: number, interfaces: util.NIDetails[], preferredIp?: string) {
         this.port = port;
         this.interfaces = interfaces;
@@ -73,6 +80,7 @@ export class QrCodePanel {
                     break;
                 case 'refresh':
                     this.detailsLoaded = false;
+                    this.token = '';
                     await this.update(this.port, util.getBasicNetworkInterfaces(), this.selectedIp);
                     break;
                 case 'size':
@@ -118,7 +126,10 @@ export class QrCodePanel {
             // Keep the payload short (no alternative hosts, capped name) so the code has fewer modules and scans
             // faster from a screen; AutoJs6 only reads host/port anyway.
             // zh-CN: 保持载荷简短 (不含备选地址, 限制主机名长度) 以减少二维码模块数, 便于从屏幕扫描; AutoJs6 仅读取 host/port.
-            payload = buildQrConnectPayload({ host: selected.ip4, port: this.port, name: os.hostname().slice(0, 24) });
+            if (!this.token && QrCodePanel.tokenProvider) {
+                this.token = QrCodePanel.tokenProvider();
+            }
+            payload = buildQrConnectPayload({ host: selected.ip4, port: this.port, name: os.hostname().slice(0, 24), token: this.token || undefined });
             dataUrl = await QRCode.toDataURL(payload, { errorCorrectionLevel: 'L', margin: 2, width: 720 });
         }
         this.panel.webview.html = this.html(selected, payload, dataUrl);
@@ -178,7 +189,7 @@ export class QrCodePanel {
     <label for="iface">网络接口</label>
     <select id="iface">${options}</select>
     ${body}
-    <p class="hint">提示: 二维码内容也可手动输入到 AutoJs6 的地址框, 格式为 "IP:端口" 或完整的 autojs6:// 链接. 需确保防火墙放行 TCP ${this.port} 端口.</p>
+    <p class="hint">提示: 二维码含一次性配对令牌 (10 分钟内有效), 扫码连接的设备将自动加入信任列表. 二维码内容也可手动输入到 AutoJs6 的地址框, 格式为 "IP:端口" 或完整的 autojs6:// 链接. 需确保防火墙放行 TCP ${this.port} 端口.</p>
 <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     document.getElementById('iface').addEventListener('change', (e) => vscode.postMessage({ cmd: 'select', ip: e.target.value }));

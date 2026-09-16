@@ -78,6 +78,11 @@
                 "icon": "$(close)"
             },
             {
+                "command": "extension.manageTrustedDevices",
+                "title": "管理已信任设备 (Manage Trusted Devices)",
+                "category": "AutoJs6"
+            },
+            {
                 "command": "extension.run",
                 "title": "运行脚本 (Run)",
                 "category": "AutoJs6",
@@ -657,6 +662,11 @@
                     "minimum": 1,
                     "maximum": 65535
                 },
+                "autojs6.server.confirmUnknownDevices": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "未知的 AutoJs6 设备 (客户端模式) 连接本机时先询问是否允许; 扫描本机二维码连接的设备, 以及已选择 \"允许并记住\" 的设备无需确认. Ask before accepting an unknown AutoJs6 device (client mode); devices that scanned the QR code or were remembered are accepted silently."
+                },
                 "autojs6.client.port": {
                     "type": "number",
                     "default": 7347,
@@ -685,6 +695,11 @@
                     "type": "string",
                     "default": "",
                     "description": "adb 可执行文件路径或其所在目录. 留空时依次尝试 PATH, ANDROID_HOME, ANDROID_SDK_ROOT 及常见安装目录 (Windows 下最后回退到插件内置 adb). Path to the adb executable or its directory."
+                },
+                "autojs6.discovery.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "建立 \"客户端模式 | 局域网\" 连接时通过 mDNS (_autojs6._tcp) 搜索局域网内开启了服务端模式的 AutoJs6 6.8.0+ 设备. Discover AutoJs6 6.8.0+ devices running server mode on the LAN via mDNS when connecting."
                 },
                 "autojs6.connection.connectTimeout": {
                     "type": "number",
