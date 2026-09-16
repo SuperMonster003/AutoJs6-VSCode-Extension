@@ -1,80 +1,92 @@
 import * as os from 'os';
-import * as crypto from 'crypto';
 import * as si from 'systeminformation';
+import { logDebug } from './logger';
 
-import { StringDecoder } from 'string_decoder';
-import { logDebug } from './extension';
+export interface NIDetails {
+    iface: string;           // Interface id. zh-CN: 网络接口名称.
+    ifaceName?: string;      // Friendly name. zh-CN: 网卡详细名称.
+    ip4: string;             // IPv4 address. zh-CN: IPv4 地址.
+    mac: string;             // MAC address. zh-CN: MAC 地址.
+    type?: string;           // wired / wireless / virtual. zh-CN: 网卡类型.
+    speed?: number | string; // Mbps or 'N/A'. zh-CN: 网卡速率.
+    default?: boolean;       // Default route interface. zh-CN: 默认网络接口.
+}
 
-export function getBasicNetworkInterfaces(): NIDetails[] {
+/**
+ * Interface names that are almost never the one a phone can reach (issue #12).
+ * zh-CN: 手机几乎不可能访问到的虚拟网卡名称 (issue #12).
+ */
+const VIRTUAL_IFACE_PATTERN = /\b(vmware|vmnet\d*|vethernet|virtualbox|vbox|hyper-v|docker\d*|br-[0-9a-f]{12}|wsl|tailscale|zerotier|utun\d*|tun\d*|tap\d*|npcap|loopback)\b/i;
+
+export function isLikelyVirtualInterface(iface: string): boolean {
+    return VIRTUAL_IFACE_PATTERN.test(iface);
+}
+
+/** Rank so that typical LAN addresses appear first. zh-CN: 排序, 使常见局域网地址靠前. */
+function rankIp(ip4: string): number {
+    if (ip4.startsWith('192.168.')) return 0;
+    if (ip4.startsWith('10.')) return 1;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip4)) return 2;
+    return 3;
+}
+
+export function getBasicNetworkInterfaces(includeVirtual = false): NIDetails[] {
     const interfaces = os.networkInterfaces();
     const result: NIDetails[] = [];
 
     for (const [ iface, infos ] of Object.entries(interfaces)) {
-        if (/\b(vmware|vmnet\d*)\b/i.test(iface)) {
+        if (!includeVirtual && isLikelyVirtualInterface(iface)) {
             continue;
         }
-        infos?.forEach(info => {
+        infos?.forEach((info) => {
+            const family = String((info as { family: string | number }).family) === '4' ? 'IPv4' : (info as { family: string | number }).family;
             if (
-                info.family === 'IPv4' &&
-                info.address !== '127.0.0.1' && // 排除本地回环网络
-                !info.address.startsWith('169.254') && // 优化: 跳过无效的 APIPA 地址
-                !info.internal // 排除虚拟网卡
+                family === 'IPv4' &&
+                info.address !== '127.0.0.1' &&
+                !info.address.startsWith('169.254') && // APIPA. zh-CN: 跳过无效的自动私有地址.
+                !info.internal
             ) {
-                let basic = {
-                    iface, // 网卡名称
-                    ip4: info.address,
-                    mac: info.mac,
-                };
-                // logDebug(`已获取基本信息:`, basic); // 打印基本信息
-                result.push(basic);
+                result.push({ iface, ip4: info.address, mac: info.mac });
             }
         });
     }
 
-    return result;
+    return result.sort((a, b) => rankIp(a.ip4) - rankIp(b.ip4));
 }
 
 export async function getDetailedNetworkInterfaces(ref: NIDetails[]): Promise<NIDetails[]> {
     try {
-        let detailedInfo = await si.networkInterfaces();
-
-        if (!Array.isArray(detailedInfo)) {
-            detailedInfo = [ detailedInfo ];
-        }
-
-        // 并行处理匹配
-        return detailedInfo
-            .filter(info => ref.some(r => r.iface === info.iface)) // 过滤匹配的接口
-            .map(info => ({
-                iface: info.iface,
+        const raw = await si.networkInterfaces();
+        const detailedInfo: si.Systeminformation.NetworkInterfacesData[] = Array.isArray(raw) ? raw : [ raw ];
+        const merged = ref.map((basic) => {
+            const info = detailedInfo.find(d => d.iface === basic.iface || d.ip4 === basic.ip4);
+            if (!info) return basic;
+            return {
+                ...basic,
                 ifaceName: info.ifaceName,
-                ip4: info.ip4,
-                mac: info.mac,
-                type: info.type, // wired/wireless...
-                speed: info.speed || 'N/A', // 默认值
-                default: info.default, // 是否为默认接口
-            }));
+                type: info.type,
+                speed: info.speed || 'N/A',
+                default: info.default,
+            } as NIDetails;
+        });
+        // Default route first, then LAN ranking. zh-CN: 默认路由优先, 其次按局域网地址排序.
+        return merged.sort((a, b) => Number(!!b.default) - Number(!!a.default) || rankIp(a.ip4) - rankIp(b.ip4));
     } catch (err) {
-        logDebug(`获取网络接口详细信息失败: ${err}`);
-        return [];
+        logDebug(`failed to get detailed network interfaces: ${err}`);
+        return ref;
     }
 }
 
-export function buffToString(buff) {
-    const decoder = new StringDecoder('utf8');
-    return decoder.write(buff);
+export function formatTimestamp(ts: number): string {
+    const date = new Date(ts);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}/${p(date.getMonth() + 1)}/${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`;
 }
 
-export function SHA1(str): string {
-    return crypto.createHash('sha1').update(str).digest().toString('base64');
-}
-
-export interface NIDetails {
-    iface: string;           // 网络接口名称
-    ifaceName?: string;      // 网卡详细名称 (详细信息)
-    ip4: string;             // IPv4 地址
-    mac: string;             // MAC 地址
-    type?: string;           // 网卡类型: wired / wireless (详细信息)
-    speed?: number | string; // 网卡速率: 数字或 'N/A' (详细信息)
-    default?: boolean;       // 默认设备 (详细信息)
+export function formatSize(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes < 0) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
