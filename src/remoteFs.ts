@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { Device, DeviceError, Devices } from './device';
-import { joinRemotePath, remoteBasename, remoteDirname, RemoteEntry, RemoteRoots, RemoteStat } from './protocol';
+import { FEATURE, FS_CHUNK_SIZE, joinRemotePath, remoteBasename, remoteDirname, RemoteEntry, RemoteRoots, RemoteStat } from './protocol';
 import { logDebug, logError } from './logger';
 import { formatSize, formatTimestamp } from './util';
 import { confirm, promptInput, showPick } from './ui';
@@ -101,6 +101,12 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
     async readFile(uri: vscode.Uri): Promise<Uint8Array> {
         const device = this.device(uri);
         try {
+            if (device.hasFeature(FEATURE.FS_CHUNKED)) {
+                const stat = await device.request<{ size: number }>('fs.stat', { path: uri.path });
+                if (stat.size > FS_CHUNK_SIZE) {
+                    return await this.readChunked(device, uri, stat.size);
+                }
+            }
             const result = await device.request<{ content: string; encoding: string }>('fs.read', { path: uri.path, encoding: 'base64' }, 120_000);
             return Buffer.from(result.content || '', result.encoding === 'base64' ? 'base64' : 'utf8');
         } catch (e) {
@@ -108,21 +114,88 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
         }
     }
 
+    /**
+     * Read a large file in `FS_CHUNK_SIZE` pieces with a cancellable progress notification (roadmap 5.8).
+     * zh-CN: 以 `FS_CHUNK_SIZE` 为单位分块读取大文件, 带可取消的进度提示 (roadmap 5.8).
+     */
+    private async readChunked(device: Device, uri: vscode.Uri, size: number): Promise<Uint8Array> {
+        const name = remoteBasename(uri.path);
+        const title = `从 ${device.name} 读取 ${name} (${formatSize(size)})`;
+        return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (progress, token) => {
+            const chunks: Buffer[] = [];
+            let offset = 0;
+            let reported = 0;
+            while (offset < size) {
+                if (token.isCancellationRequested) {
+                    throw new DeviceError(`已取消读取 ${name}`, device);
+                }
+                const result = await device.request<{ content: string; encoding: string; eof?: boolean }>('fs.read', { path: uri.path, encoding: 'base64', offset, length: FS_CHUNK_SIZE }, 120_000);
+                const chunk = Buffer.from(result.content || '', result.encoding === 'base64' ? 'base64' : 'utf8');
+                if (chunk.length === 0) {
+                    break;
+                }
+                chunks.push(chunk);
+                offset += chunk.length;
+                const percent = Math.min(100, Math.floor(offset * 100 / size));
+                progress.report({ message: `${percent}%`, increment: percent - reported });
+                reported = percent;
+                if (result.eof) {
+                    break;
+                }
+            }
+            return Buffer.concat(chunks);
+        });
+    }
+
     async writeFile(uri: vscode.Uri, content: Uint8Array, options: { create: boolean; overwrite: boolean }): Promise<void> {
         const device = this.device(uri);
         try {
-            await device.request('fs.write', {
-                path: uri.path,
-                content: Buffer.from(content).toString('base64'),
-                encoding: 'base64',
-                create: options.create,
-                overwrite: options.overwrite,
-                mkdirs: true,
-            }, 120_000);
+            if (content.length > FS_CHUNK_SIZE && device.hasFeature(FEATURE.FS_CHUNKED)) {
+                await this.writeChunked(device, uri, Buffer.from(content), options);
+            } else {
+                await device.request('fs.write', {
+                    path: uri.path,
+                    content: Buffer.from(content).toString('base64'),
+                    encoding: 'base64',
+                    create: options.create,
+                    overwrite: options.overwrite,
+                    mkdirs: true,
+                }, 120_000);
+            }
             this.fireChanged(uri);
         } catch (e) {
             throw RemoteFileSystemProvider.translate(e, uri);
         }
+    }
+
+    /**
+     * Write a large file in pieces: the first piece replaces the file, the following ones append (roadmap 5.8).
+     * zh-CN: 分块写入大文件: 首块覆盖文件, 后续块追加 (roadmap 5.8).
+     */
+    private async writeChunked(device: Device, uri: vscode.Uri, content: Buffer, options: { create: boolean; overwrite: boolean }): Promise<void> {
+        const name = remoteBasename(uri.path);
+        const title = `向 ${device.name} 写入 ${name} (${formatSize(content.length)})`;
+        return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (progress, token) => {
+            let reported = 0;
+            for (let offset = 0; offset < content.length; offset += FS_CHUNK_SIZE) {
+                if (token.isCancellationRequested) {
+                    throw new DeviceError(`已取消写入 ${name} (设备上的文件可能不完整)`, device);
+                }
+                const chunk = content.subarray(offset, Math.min(content.length, offset + FS_CHUNK_SIZE));
+                await device.request('fs.write', {
+                    path: uri.path,
+                    content: chunk.toString('base64'),
+                    encoding: 'base64',
+                    create: options.create,
+                    overwrite: options.overwrite,
+                    mkdirs: true,
+                    append: offset > 0,
+                }, 120_000);
+                const percent = Math.min(100, Math.floor((offset + chunk.length) * 100 / content.length));
+                progress.report({ message: `${percent}%`, increment: percent - reported });
+                reported = percent;
+            }
+        });
     }
 
     async delete(uri: vscode.Uri, options: { recursive: boolean }): Promise<void> {
