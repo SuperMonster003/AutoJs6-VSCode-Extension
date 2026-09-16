@@ -183,7 +183,7 @@ test('a denied device is rejected with an error hello and closed', async () => {
         assert.equal(devices.devices.length, 0);
         const hellos = client.hellos();
         assert.equal(hellos[0].pending, true);
-        assert.match(hellos[hellos.length - 1].errorMessage, /拒绝/);
+        assert.match(hellos[hellos.length - 1].errorMessage, /denied/);
         assert.equal(rejections.length, 1);
         assert.match(rejections[0], /Fake dev-d/);
     } finally {

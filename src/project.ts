@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { Uri } from 'vscode';
 import { FileFilter } from './diff';
 import { logDebug, logError } from './logger';
+import { t } from './i18n';
 
 /**
  * Copies the bundled project template into a target folder without overwriting existing files.
@@ -57,16 +58,16 @@ export function resolveProjectDir(fsPath: string): { dir: string; error?: string
     try {
         if (!fs.statSync(dir).isDirectory()) {
             if (path.basename(dir) !== 'project.json') {
-                return { dir, error: `项目路径 "${dir}" 需为目录` };
+                return { dir, error: t('Project path "{0}" must be a folder', dir) };
             }
             dir = path.dirname(dir);
         }
     } catch (e) {
-        return { dir, error: `项目路径 "${dir}" 不存在` };
+        return { dir, error: t('Project path "{0}" does not exist', dir) };
     }
     const jsonPath = path.join(dir, 'project.json');
     if (!fs.existsSync(jsonPath)) {
-        return { dir, error: `缺少必要的项目配置文件: ${jsonPath}` };
+        return { dir, error: t('Missing project file: {0}', jsonPath) };
     }
     return { dir };
 }

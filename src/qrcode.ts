@@ -4,6 +4,7 @@ import * as QRCode from 'qrcode';
 import * as util from './util';
 import { buildQrConnectPayload } from './protocol';
 import { logDebug } from './logger';
+import { t } from './i18n';
 
 const DEFAULT_QR_SIZE = 320;
 const STORAGE_KEY_SIZE = 'autojs6.qrcode.size';
@@ -28,7 +29,7 @@ export class QrCodePanel {
         }
         const panel = vscode.window.createWebviewPanel(
             'autojs6.qrcode',
-            'AutoJs6 扫码连接 (QR Code)',
+            t('AutoJs6 QR Code Connect'),
             vscode.ViewColumn.Beside,
             { enableScripts: true, retainContextWhenHidden: true },
         );
@@ -75,7 +76,7 @@ export class QrCodePanel {
                 case 'copy':
                     if (message.text) {
                         await vscode.env.clipboard.writeText(message.text);
-                        vscode.window.showInformationMessage('连接信息已复制到剪贴板');
+                        vscode.window.showInformationMessage(t('Connection info copied to the clipboard'));
                     }
                     break;
                 case 'refresh':
@@ -139,24 +140,24 @@ export class QrCodePanel {
         const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         const options = this.interfaces.map((ni) => {
             const parts = [ ni.ip4, ni.ifaceName || ni.iface ];
-            if (ni.default) parts.push('默认');
+            if (ni.default) parts.push(t('default'));
             const label = parts.join(' | ');
             return `<option value="${esc(ni.ip4)}" ${ni.ip4 === selected?.ip4 ? 'selected' : ''}>${esc(label)}</option>`;
         }).join('');
         const nonce = String(Date.now());
         const body = selected ? `
             <div class="qr"><img id="qr" src="${dataUrl}" alt="QR Code" style="width:${this.size}px;height:${this.size}px" /></div>
-            <div class="size"><label for="size">二维码尺寸</label> <input id="size" type="range" min="200" max="900" step="20" value="${this.size}" /> <span id="sizeValue">${this.size}px</span></div>
+            <div class="size"><label for="size">${t('QR code size')}</label> <input id="size" type="range" min="200" max="900" step="20" value="${this.size}" /> <span id="sizeValue">${this.size}px</span></div>
             <div class="addr">${esc(selected.ip4)}:${this.port}</div>
             <div class="payload"><code id="payload">${esc(payload)}</code></div>
             <div class="actions">
-                <button id="copy">复制连接信息 (Copy)</button>
-                <button id="refresh">刷新 (Refresh)</button>
+                <button id="copy">${t('Copy connection info')}</button>
+                <button id="refresh">${t('Refresh')}</button>
             </div>` : `
-            <p class="warn">未找到可用的局域网 IP 地址, 请检查网络连接后刷新.</p>
-            <div class="actions"><button id="refresh">刷新 (Refresh)</button></div>`;
+            <p class="warn">${t('No usable LAN IP address found; check the network and refresh.')}</p>
+            <div class="actions"><button id="refresh">${t('Refresh')}</button></div>`;
         return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${vscode.env.language}">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
@@ -179,17 +180,17 @@ export class QrCodePanel {
 </style>
 </head>
 <body>
-    <h2>AutoJs6 扫码连接</h2>
+    <h2>${t('AutoJs6 QR Code Connect')}</h2>
     <ol>
-        <li>打开 AutoJs6 侧拉菜单, 点击 "客户端模式" 输入框右侧的扫码按钮</li>
-        <li>扫描下方二维码, AutoJs6 将自动连接到本机 (端口 ${this.port})</li>
-        <li>扫描时保持手机与屏幕距离约 15 - 30 cm 并等待对焦; 若难以识别, 可拖动下方滑块放大二维码</li>
-        <li>若手机与电脑不在同一网段, 可在下方切换网络接口</li>
+        <li>${t('Open the AutoJs6 drawer and tap the scan button next to the "Client mode" input')}</li>
+        <li>${t('Scan the QR code below; AutoJs6 connects to this PC (port {0})', this.port)}</li>
+        <li>${t('Hold the phone about 15 - 30 cm from the screen and wait for focus; if it will not scan, enlarge the code with the slider below')}</li>
+        <li>${t('If the phone and the PC are on different subnets, switch the network interface below')}</li>
     </ol>
-    <label for="iface">网络接口</label>
+    <label for="iface">${t('Network interface')}</label>
     <select id="iface">${options}</select>
     ${body}
-    <p class="hint">提示: 二维码含一次性配对令牌 (10 分钟内有效), 扫码连接的设备将自动加入信任列表. 二维码内容也可手动输入到 AutoJs6 的地址框, 格式为 "IP:端口" 或完整的 autojs6:// 链接. 需确保防火墙放行 TCP ${this.port} 端口.</p>
+    <p class="hint">${t('Tip: the code carries a one-time pairing token (valid for 10 minutes); devices that scan it are trusted automatically. The text can also be typed into the AutoJs6 address box as "IP:port" or as the full autojs6:// link. Make sure the firewall allows TCP port {0}.', this.port)}</p>
 <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     document.getElementById('iface').addEventListener('change', (e) => vscode.postMessage({ cmd: 'select', ip: e.target.value }));

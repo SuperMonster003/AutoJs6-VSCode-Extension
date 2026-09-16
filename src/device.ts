@@ -25,6 +25,7 @@ import {
     ResponseData,
     toPosixPath,
 } from './protocol';
+import { t } from './i18n';
 
 const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8'));
 
@@ -134,6 +135,8 @@ export const CLOSE_REASON = {
     HANDSHAKE: 'handshake timed out',
 } as const;
 
+export type RejectKind = 'version' | 'pairing' | 'error';
+
 export type PairingVerdict = 'allow' | 'trust' | 'deny';
 
 /**
@@ -166,6 +169,8 @@ export class Device extends events.EventEmitter {
     pairing: PairingHandler | null = null;
     /** `true` while waiting for the person's approval. zh-CN: 等待用户确认期间为 true. */
     pairingPending = false;
+    /** Why the last hello was rejected; `version` is permanent (no reconnect). zh-CN: 最近一次拒绝 hello 的原因; version 为永久性 (不重连). */
+    rejectKind: RejectKind | null = null;
     versionName = '';
     versionCode = 0;
     protocolVersion = 1;
@@ -343,7 +348,7 @@ export class Device extends events.EventEmitter {
         if (this.versionCode < REQUIRED_AUTOJS6_VERSION_CODE) {
             const current = `${this.versionName} (${this.versionCode})`;
             const required = `${REQUIRED_AUTOJS6_VERSION_NAME} (${REQUIRED_AUTOJS6_VERSION_CODE})`;
-            this.rejectHello(`无法建立连接, AutoJs6 版本 ${current} 应不低于 ${required}`);
+            this.rejectHello(t('Cannot connect: AutoJs6 version {0} must be at least {1}', current, required), 'version');
             return;
         }
 
@@ -373,7 +378,8 @@ export class Device extends events.EventEmitter {
         this.emit('attach', this);
     }
 
-    private rejectHello(message: string) {
+    private rejectHello(message: string, kind: RejectKind) {
+        this.rejectKind = kind;
         this.sendHello(message);
         this.closeReason = message;
         this.emit('reject', message);
@@ -399,7 +405,7 @@ export class Device extends events.EventEmitter {
                 return;
             }
             if (verdict === 'deny') {
-                this.rejectHello(`已拒绝设备 ${this.name} 的连接请求`);
+                this.rejectHello(t('Connection request from device {0} was denied', this.name), 'pairing');
                 return;
             }
             if (verdict === 'trust') {
@@ -409,7 +415,7 @@ export class Device extends events.EventEmitter {
         }, (e) => {
             this.pairingPending = false;
             if (this.socket && !this.socket.destroyed) {
-                this.rejectHello(`确认设备 ${this.name} 时出错: ${e}`);
+                this.rejectHello(t('Failed to confirm device {0}: {1}', this.name, String(e)), 'error');
             }
         });
     }
@@ -529,10 +535,10 @@ export class Device extends events.EventEmitter {
      */
     request<T = any>(method: RequestMethod, params: object = {}, timeout = 30_000): Promise<T> {
         if (!this.supportsRequests) {
-            return Promise.reject(new DeviceError(`AutoJs6 ${this.versionName} 不支持此功能, 请升级至协议 v2 版本`, this));
+            return Promise.reject(new DeviceError(t('AutoJs6 {0} does not support this feature; please upgrade to a protocol v2 build', this.versionName), this));
         }
         if (!this.isConnected) {
-            return Promise.reject(new DeviceError(`设备未连接 (${this})`, this));
+            return Promise.reject(new DeviceError(t('Device not connected ({0})', String(this)), this));
         }
         const id = this.nextId++;
         return new Promise<T>((resolve, reject) => {
@@ -686,10 +692,10 @@ export class Devices extends events.EventEmitter {
         const key = targetKey(target);
         const existing = this.hasTarget(target);
         if (existing) {
-            throw new DeviceError(`设备 ${existing} 已建立连接, 无需重复连接`, existing);
+            throw new DeviceError(t('Device {0} is already connected', String(existing)), existing);
         }
         if (this.connecting.has(key)) {
-            throw new DeviceError(`正在连接 ${describeTarget(target)}, 请稍候`);
+            throw new DeviceError(t('Already connecting to {0}, please wait', describeTarget(target)));
         }
         if (!fromReconnect) {
             this.cancelReconnect(key);
@@ -718,7 +724,7 @@ export class Devices extends events.EventEmitter {
                 socket.destroy();
                 reject(e);
             };
-            socket.setTimeout(this.options().connectTimeout, () => fail(new DeviceError(`连接超时 (${target.host}:${target.port})`)));
+            socket.setTimeout(this.options().connectTimeout, () => fail(new DeviceError(t('Connection timed out ({0})', `${target.host}:${target.port}`))));
             socket.once('error', (e) => fail(e));
             socket.connect(target.port, target.host, () => {
                 socket.setTimeout(0);
@@ -736,7 +742,7 @@ export class Devices extends events.EventEmitter {
                 device.once('disconnect', (reason: string) => {
                     if (!settled) {
                         settled = true;
-                        reject(new DeviceError(`连接已关闭: ${reason}`));
+                        reject(new DeviceError(t('Connection closed: {0}', reason)));
                     }
                 });
             });
@@ -779,19 +785,19 @@ export class Devices extends events.EventEmitter {
     }
 
     /** Whether a disconnect of `device` should be followed by automatic reconnection. zh-CN: 断开后是否应自动重连. */
-    shouldReconnect(device: Device, reason: string): boolean {
+    shouldReconnect(device: Device): boolean {
         const target = device.connectionTarget;
         if (!target || device.target === ConnectionType.CLIENT_LAN) return false;
         if (device.isClosedByUser) return false;
         // The person disconnected on the device side; respect it (roadmap 3.9). zh-CN: 用户在设备侧显式断开, 尊重其意愿.
         if (device.peerByeReason === 'user') return false;
         if (!this.options().autoReconnect) return false;
-        if (reason && reason.includes('版本')) return false; // Version rejection is permanent. zh-CN: 版本拒绝无需重试.
+        if (device.rejectKind === 'version') return false; // Version rejection is permanent. zh-CN: 版本拒绝无需重试.
         return true;
     }
 
     private maybeScheduleReconnect(device: Device, reason: string) {
-        if (!this.shouldReconnect(device, reason)) {
+        if (!this.shouldReconnect(device)) {
             return;
         }
         this.startReconnect(device.connectionTarget!, reason);

@@ -5,6 +5,7 @@ import { FEATURE, FS_CHUNK_SIZE, joinRemotePath, remoteBasename, remoteDirname, 
 import { logDebug, logError } from './logger';
 import { formatSize, formatTimestamp } from './util';
 import { confirm, promptInput, showPick } from './ui';
+import { t } from './i18n';
 
 export const REMOTE_SCHEME = 'autojs6fs';
 
@@ -37,10 +38,10 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
         const id = deviceIdOfUri(uri);
         const device = this.devices.getDevice(id);
         if (!device || !device.isConnected) {
-            throw vscode.FileSystemError.Unavailable(`设备未连接: ${id}`);
+            throw vscode.FileSystemError.Unavailable(t('Device not connected: {0}', id));
         }
         if (!device.supportsRequests) {
-            throw vscode.FileSystemError.Unavailable(`AutoJs6 ${device.versionName} 不支持远程文件管理, 请升级 AutoJs6`);
+            throw vscode.FileSystemError.Unavailable(t('AutoJs6 {0} does not support remote file management; please upgrade AutoJs6', device.versionName));
         }
         return device;
     }
@@ -120,14 +121,14 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
      */
     private async readChunked(device: Device, uri: vscode.Uri, size: number): Promise<Uint8Array> {
         const name = remoteBasename(uri.path);
-        const title = `从 ${device.name} 读取 ${name} (${formatSize(size)})`;
+        const title = t('Reading {0} from {1} ({2})', name, device.name, formatSize(size));
         return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (progress, token) => {
             const chunks: Buffer[] = [];
             let offset = 0;
             let reported = 0;
             while (offset < size) {
                 if (token.isCancellationRequested) {
-                    throw new DeviceError(`已取消读取 ${name}`, device);
+                    throw new DeviceError(t('Reading {0} was cancelled', name), device);
                 }
                 const result = await device.request<{ content: string; encoding: string; eof?: boolean }>('fs.read', { path: uri.path, encoding: 'base64', offset, length: FS_CHUNK_SIZE }, 120_000);
                 const chunk = Buffer.from(result.content || '', result.encoding === 'base64' ? 'base64' : 'utf8');
@@ -174,12 +175,12 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
      */
     private async writeChunked(device: Device, uri: vscode.Uri, content: Buffer, options: { create: boolean; overwrite: boolean }): Promise<void> {
         const name = remoteBasename(uri.path);
-        const title = `向 ${device.name} 写入 ${name} (${formatSize(content.length)})`;
+        const title = t('Writing {0} to {1} ({2})', name, device.name, formatSize(content.length));
         return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (progress, token) => {
             let reported = 0;
             for (let offset = 0; offset < content.length; offset += FS_CHUNK_SIZE) {
                 if (token.isCancellationRequested) {
-                    throw new DeviceError(`已取消写入 ${name} (设备上的文件可能不完整)`, device);
+                    throw new DeviceError(t('Writing {0} was cancelled (the file on the device may be incomplete)', name), device);
                 }
                 const chunk = content.subarray(offset, Math.min(content.length, offset + FS_CHUNK_SIZE));
                 await device.request('fs.write', {
@@ -211,7 +212,7 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
     async rename(oldUri: vscode.Uri, newUri: vscode.Uri, options: { overwrite: boolean }): Promise<void> {
         const device = this.device(oldUri);
         if (deviceIdOfUri(oldUri) !== deviceIdOfUri(newUri)) {
-            throw vscode.FileSystemError.NoPermissions('不支持跨设备移动文件');
+            throw vscode.FileSystemError.NoPermissions(t('Moving files between devices is not supported'));
         }
         try {
             await device.request('fs.rename', { path: oldUri.path, newPath: newUri.path, overwrite: options.overwrite });
@@ -281,11 +282,11 @@ export class DevicesTreeProvider implements vscode.TreeDataProvider<DeviceNode> 
         item.id = `device:${device.deviceId}`;
         item.description = `${device.versionName} | ${device.toString().replace(/^.*\((.*)\)$/, '$1')}`;
         item.tooltip = [
-            `设备: ${device.name}`,
-            `设备 ID: ${device.deviceId}`,
+            t('Device: {0}', device.name),
+            t('Device ID: {0}', device.deviceId),
             `AutoJs6: ${device.versionName} (${device.versionCode})`,
-            `协议版本: ${device.protocolVersion}`,
-            `连接时间: ${formatTimestamp(device.connectedAt)}`,
+            t('Protocol version: {0}', device.protocolVersion),
+            t('Connected at: {0}', formatTimestamp(device.connectedAt)),
         ].join('\n');
         item.iconPath = new vscode.ThemeIcon(device.supportsRequests ? 'device-mobile' : 'device-mobile', new vscode.ThemeColor(device.supportsRequests ? 'charts.green' : 'charts.yellow'));
         item.contextValue = device.supportsRequests ? 'device.v2' : 'device.v1';
@@ -322,7 +323,7 @@ export class DeviceFilesTreeProvider implements vscode.TreeDataProvider<TreeNode
         if (node.kind === 'device') {
             const item = new vscode.TreeItem(node.device.name, vscode.TreeItemCollapsibleState.Collapsed);
             item.id = `files:${node.device.deviceId}`;
-            item.description = node.device.supportsRequests ? node.device.versionName : `${node.device.versionName} (不支持远程文件)`;
+            item.description = node.device.supportsRequests ? node.device.versionName : `${node.device.versionName} (${t('no remote files')})`;
             item.iconPath = new vscode.ThemeIcon('device-mobile');
             item.contextValue = 'fs.device';
             return item;
@@ -340,14 +341,14 @@ export class DeviceFilesTreeProvider implements vscode.TreeDataProvider<TreeNode
         const item = new vscode.TreeItem(entry.name, node.isDirectory ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
         item.id = `entry:${node.device.deviceId}:${entry.path}`;
         item.resourceUri = remoteUri(node.device, entry.path);
-        item.tooltip = `${entry.path}\n${node.isDirectory ? '目录' : formatSize(entry.size)} | ${formatTimestamp(entry.mtime)}`;
+        item.tooltip = `${entry.path}\n${node.isDirectory ? t('Directory') : formatSize(entry.size)} | ${formatTimestamp(entry.mtime)}`;
         if (node.isDirectory) {
             item.iconPath = vscode.ThemeIcon.Folder;
             item.contextValue = 'fs.directory';
         } else {
             item.description = formatSize(entry.size);
             item.contextValue = /\.(js|mjs|cjs|ts|auto)$/i.test(entry.name) ? 'fs.script' : 'fs.file';
-            item.command = { command: 'vscode.open', title: '打开', arguments: [ item.resourceUri ] };
+            item.command = { command: 'vscode.open', title: t('Open'), arguments: [ item.resourceUri ] };
         }
         return item;
     }
@@ -377,7 +378,7 @@ export class DeviceFilesTreeProvider implements vscode.TreeDataProvider<TreeNode
                 .map(e => new EntryNode(node.device, e));
         } catch (e) {
             logError('failed to list remote files:', e);
-            vscode.window.showErrorMessage(`读取设备文件失败: ${(e as Error).message}`);
+            vscode.window.showErrorMessage(t('Failed to read the device file: {0}', (e as Error).message));
             return [];
         }
     }
@@ -435,36 +436,36 @@ export class RemoteFileCommands {
 
     private async run(node: EntryNode | RootNode) {
         if (node.kind === 'entry' && node.isDirectory) {
-            throw new DeviceError('请选择一个脚本文件');
+            throw new DeviceError(t('Pick a script file'));
         }
         if (node.kind === 'root') {
-            throw new DeviceError('请选择一个脚本文件');
+            throw new DeviceError(t('Pick a script file'));
         }
         await node.device.request('script.run', { path: node.path });
-        vscode.window.showInformationMessage(`已在 ${node.device} 运行 ${remoteBasename(node.path)}`);
+        vscode.window.showInformationMessage(t('Running {0} on {1}', remoteBasename(node.path), String(node.device)));
     }
 
     private async delete(node: EntryNode) {
-        const ok = await confirm(`确认删除 ${node.device} 上的 "${node.path}" 吗`, node.isDirectory ? '目录及其内容将被删除' : '文件将被删除');
+        const ok = await confirm(t('Delete "{0}" on {1}?', node.path, String(node.device)), node.isDirectory ? t('The folder and its contents will be deleted') : t('The file will be deleted'));
         if (!ok) return;
         await this.fsProvider.delete(remoteUri(node.device, node.path), { recursive: true });
     }
 
     private async rename(node: EntryNode) {
-        const name = await promptInput({ prompt: '输入新名称', value: node.entry.name, validateInput: v => /[\\/]/.test(v) ? '名称不能包含路径分隔符' : (v.trim() ? null : '名称不能为空') });
+        const name = await promptInput({ prompt: t('New name'), value: node.entry.name, validateInput: v => /[\\/]/.test(v) ? t('The name cannot contain path separators') : (v.trim() ? null : t('The name cannot be empty')) });
         if (!name || name === node.entry.name) return;
         const newPath = joinRemotePath(remoteDirname(node.path), name);
         await this.fsProvider.rename(remoteUri(node.device, node.path), remoteUri(node.device, newPath), { overwrite: false });
     }
 
     private async newFolder(node: EntryNode | RootNode) {
-        const name = await promptInput({ prompt: '输入文件夹名称', validateInput: v => /[\\/]/.test(v) ? '名称不能包含路径分隔符' : (v.trim() ? null : '名称不能为空') });
+        const name = await promptInput({ prompt: t('Folder name'), validateInput: v => /[\\/]/.test(v) ? t('The name cannot contain path separators') : (v.trim() ? null : t('The name cannot be empty')) });
         if (!name) return;
         await this.fsProvider.createDirectory(remoteUri(node.device, joinRemotePath(this.dirOf(node), name)));
     }
 
     private async newFile(node: EntryNode | RootNode) {
-        const name = await promptInput({ prompt: '输入文件名称', value: 'untitled.js', validateInput: v => /[\\/]/.test(v) ? '名称不能包含路径分隔符' : (v.trim() ? null : '名称不能为空') });
+        const name = await promptInput({ prompt: t('File name'), value: 'untitled.js', validateInput: v => /[\\/]/.test(v) ? t('The name cannot contain path separators') : (v.trim() ? null : t('The name cannot be empty')) });
         if (!name) return;
         const uri = remoteUri(node.device, joinRemotePath(this.dirOf(node), name));
         await this.fsProvider.writeFile(uri, new Uint8Array(0), { create: true, overwrite: false });
@@ -474,19 +475,19 @@ export class RemoteFileCommands {
     private async uploadCurrentFile(node: EntryNode | RootNode) {
         const editor = vscode.window.activeTextEditor;
         if (!editor || editor.document.uri.scheme === REMOTE_SCHEME) {
-            throw new DeviceError('需在正在编辑的本地文件窗口中使用此命令');
+            throw new DeviceError(t('Use this command in an open local file editor'));
         }
         const name = editor.document.isUntitled ? 'untitled.js' : path.basename(editor.document.fileName);
         const uri = remoteUri(node.device, joinRemotePath(this.dirOf(node), name));
         await this.fsProvider.writeFile(uri, Buffer.from(editor.document.getText(), 'utf8'), { create: true, overwrite: true });
-        vscode.window.showInformationMessage(`已上传到 ${node.device}: ${uri.path}`);
+        vscode.window.showInformationMessage(t('Uploaded to {0}: {1}', String(node.device), uri.path));
     }
 
     private async uploadFiles(node: EntryNode | RootNode) {
-        const uris = await vscode.window.showOpenDialog({ canSelectMany: true, canSelectFolders: false, openLabel: '上传' });
+        const uris = await vscode.window.showOpenDialog({ canSelectMany: true, canSelectFolders: false, openLabel: t('Upload') });
         if (!uris || uris.length === 0) return;
         const dir = this.dirOf(node);
-        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `上传到 ${node.device}` }, async (progress) => {
+        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t('Uploading to {0}', String(node.device)) }, async (progress) => {
             for (let i = 0; i < uris.length; i++) {
                 const local = uris[i];
                 progress.report({ message: `${i + 1}/${uris.length} ${path.basename(local.fsPath)}`, increment: 100 / uris.length });
@@ -498,38 +499,38 @@ export class RemoteFileCommands {
 
     private async download(node: EntryNode) {
         if (node.isDirectory) {
-            throw new DeviceError('暂不支持下载目录');
+            throw new DeviceError(t('Downloading folders is not supported yet'));
         }
         const target = await vscode.window.showSaveDialog({ defaultUri: vscode.Uri.file(path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '', node.entry.name)) });
         if (!target) return;
         const content = await this.fsProvider.readFile(remoteUri(node.device, node.path));
         await vscode.workspace.fs.writeFile(target, content);
-        vscode.window.showInformationMessage(`已下载到 ${target.fsPath}`);
+        vscode.window.showInformationMessage(t('Downloaded to {0}', target.fsPath));
     }
 
     /** Open a device root folder in the explorer as a workspace folder. zh-CN: 将设备目录作为工作区文件夹打开. */
     private async browse() {
         const candidates = this.devices.devices.filter(d => d.supportsRequests);
         if (candidates.length === 0) {
-            throw new DeviceError('未发现支持远程文件管理的已连接设备');
+            throw new DeviceError(t('No connected device supports remote file management'));
         }
         const picked = await showPick({
-            title: '选择设备',
-            placeholder: '选择需要浏览文件的设备',
+            title: t('Pick a Device'),
+            placeholder: t('Pick the device whose files to browse'),
             items: candidates.map(d => ({ label: d.toString(), description: d.versionName, device: d })),
         });
         if (typeof picked !== 'object') return;
         const device = picked.device;
         const roots = await device.request<RemoteRoots>('fs.roots');
         const root = await showPick({
-            title: `选择 ${device} 的目录`,
+            title: t('Pick a folder on {0}', String(device)),
             items: roots.roots.map(r => ({ label: r.name, description: r.path, path: r.path })),
         });
         if (typeof root !== 'object') return;
         const uri = remoteUri(device, root.path);
         const folders = vscode.workspace.workspaceFolders || [];
         if (folders.some(f => f.uri.toString() === uri.toString())) {
-            vscode.window.showInformationMessage('该目录已在工作区中');
+            vscode.window.showInformationMessage(t('This folder is already in the workspace'));
             return;
         }
         vscode.workspace.updateWorkspaceFolders(folders.length, 0, { uri, name: `${device.name} / ${root.label}` });

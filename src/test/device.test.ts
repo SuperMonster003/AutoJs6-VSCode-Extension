@@ -163,7 +163,7 @@ test('bye(user) from the device suppresses auto reconnect', async () => {
         const [ , reason ] = await detach;
         assert.equal(device.peerByeReason, 'user');
         assert.equal(reason, CLOSE_REASON.PEER_USER);
-        assert.ok(!devices.shouldReconnect(device, reason));
+        assert.ok(!devices.shouldReconnect(device));
         assert.ok(!devices.isReconnecting);
     } finally {
         devices.dispose();

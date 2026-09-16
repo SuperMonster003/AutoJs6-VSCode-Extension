@@ -23,6 +23,7 @@ import { QrCodePanel } from './qrcode';
 import { DeviceFilesTreeProvider, DevicesTreeProvider, REMOTE_SCHEME, RemoteFileCommands, RemoteFileSystemProvider, remoteUri } from './remoteFs';
 import { Settings } from './settings';
 import { confirm, pickNetworkInterface, showErrorWithAction, showMultiPick, showPick } from './ui';
+import { t } from './i18n';
 
 const EXTENSION_NAME = 'AutoJs6 VSCode Extension';
 const IP_LOOP_BACK = '127.0.0.1';
@@ -39,19 +40,19 @@ const DISCOVERY_BUSY_MS = 8_000;
 const STORAGE_IP_BLACKLIST = [ IP_LOOP_BACK, IP_UNIVERSAL ];
 
 const PREFIX = {
-    connect: '[ 连接 ]',
-    discovered: '[ 发现 ]',
-    clear: '[ 清理 ]',
-    record: '[ 记录 ]',
-    optional: '[ 可选 ]',
+    connect: `[ ${t('Connect')} ]`,
+    discovered: `[ ${t('Found')} ]`,
+    clear: `[ ${t('Clear')} ]`,
+    record: `[ ${t('History')} ]`,
+    optional: `[ ${t('Optional')} ]`,
 };
 
 const LABEL = {
-    ajClientLan: `${PREFIX.connect} - 服务端模式 (Server) | 局域网 (LAN)`,
-    ajClientQr: `${PREFIX.connect} - 服务端模式 (Server) | 二维码 (QR Code)`,
-    ajServerLan: `${PREFIX.connect} - 客户端模式 (Client) | 局域网 (LAN)`,
-    ajServerAdb: `${PREFIX.connect} - 客户端模式 (Client) | 安卓调试桥 (ADB)`,
-    recordClear: `${PREFIX.clear} - IP 地址记录 (IP Address Records)`,
+    ajClientLan: `${PREFIX.connect} - ${t('Server mode | LAN')}`,
+    ajClientQr: `${PREFIX.connect} - ${t('Server mode | QR code')}`,
+    ajServerLan: `${PREFIX.connect} - ${t('Client mode | LAN')}`,
+    ajServerAdb: `${PREFIX.connect} - ${t('Client mode | ADB')}`,
+    recordClear: `${PREFIX.clear} - ${t('IP address history')}`,
 };
 
 /** Commands the device may ask the extension to run. zh-CN: 设备可请求插件执行的命令白名单. */
@@ -196,9 +197,9 @@ export class Extension implements vscode.Disposable, PairingHandler {
         const port = Settings.serverPort;
         this.devices.startServer(port).then(() => this.updateStatusBar()).catch((e: NodeJS.ErrnoException) => {
             const hint = e.code === 'EADDRINUSE'
-                ? `端口 ${port} 已被占用 (可能是另一个 VSCode 窗口). 客户端模式 (AutoJs6 主动连接) 在本窗口不可用, 其他连接方式仍可使用.`
-                : `无法监听端口 ${port}: ${e.message}`;
-            showErrorWithAction(`AutoJs6: ${hint}`, '修改端口', () => vscode.commands.executeCommand('workbench.action.openSettings', 'autojs6.server.port'));
+                ? t('Port {0} is already in use (probably another VSCode window). AutoJs6 client mode cannot connect to this window; the other connection methods still work.', port)
+                : t('Cannot listen on port {0}: {1}', port, e.message);
+            showErrorWithAction(`AutoJs6: ${hint}`, t('Change Port'), () => vscode.commands.executeCommand('workbench.action.openSettings', 'autojs6.server.port'));
             this.updateStatusBar();
         });
         if (Settings.httpEnabled) {
@@ -240,8 +241,8 @@ export class Extension implements vscode.Disposable, PairingHandler {
             .on('log', (device: Device, text: string) => this.channels.append(device.deviceId, text))
             .on('command', (device: Device, param: DeviceCommandParam) => this.onDeviceCommand(device, param))
             .on('reject', (device: Device, message: string) => {
-                if (message.includes('版本')) {
-                    showErrorWithAction(message, '查看所有项目版本', () => vscode.env.openExternal(Uri.parse('https://github.com/SuperMonster003/AutoJs6/releases/')));
+                if (device.rejectKind === 'version') {
+                    showErrorWithAction(message, t('View Releases'), () => vscode.env.openExternal(Uri.parse('https://github.com/SuperMonster003/AutoJs6/releases/')));
                 } else {
                     vscode.window.showWarningMessage(message);
                 }
@@ -256,17 +257,17 @@ export class Extension implements vscode.Disposable, PairingHandler {
     }
 
     private onDetachDevice(device: Device, reason: string) {
-        const willReconnect = this.devices.shouldReconnect(device, reason);
+        const willReconnect = this.devices.shouldReconnect(device);
         const silent = reason === CLOSE_REASON.SHUTDOWN || reason === CLOSE_REASON.REPLACED;
         if (!silent) {
             const detail = reason && reason !== CLOSE_REASON.USER ? ` (${reason})` : '';
-            vscode.window.showInformationMessage(`AutoJs6 设备断开: ${device}${detail}${willReconnect ? ', 将自动重连' : ''}`);
+            vscode.window.showInformationMessage(t('AutoJs6 device disconnected: {0}{1}{2}', String(device), detail, willReconnect ? t(', reconnecting automatically') : ''));
         }
         this.channels.onDisconnect(device.deviceId, device.toString());
         this.releaseAdbForward(device);
         // An explicit disconnect on either side must not be restored later (respect the user's intent).
         // zh-CN: 任一侧显式断开的连接不再恢复 (尊重用户意愿).
-        if (device.connectionTarget && (reason === CLOSE_REASON.USER || device.peerByeReason === 'user' || reason.includes('版本'))) {
+        if (device.connectionTarget && (reason === CLOSE_REASON.USER || device.peerByeReason === 'user' || device.rejectKind === 'version')) {
             this.forgetTarget(device.connectionTarget);
         }
         this.updateStatusBar();
@@ -274,9 +275,9 @@ export class Extension implements vscode.Disposable, PairingHandler {
 
     private onReconnectFailed(target: ConnectionTarget, lastError: string, session: ReconnectSession) {
         const name = describeTarget(target);
-        const retry = '重试';
-        const forget = '不再自动恢复';
-        vscode.window.showWarningMessage(`AutoJs6: 无法重新连接 ${name} (已尝试 ${session.attempts} 次, 最近错误: ${lastError || '未知'}), 已停止重试`, retry, forget).then((choice) => {
+        const retry = t('Retry');
+        const forget = t('Stop Restoring');
+        vscode.window.showWarningMessage(t('AutoJs6: could not reconnect to {0} (tried {1} times, last error: {2}); giving up', name, session.attempts, lastError || t('unknown')), retry, forget).then((choice) => {
             if (choice === retry) {
                 this.devices.startReconnect(target, '', true);
             } else if (choice === forget) {
@@ -296,17 +297,17 @@ export class Extension implements vscode.Disposable, PairingHandler {
         if (Settings.showChannelOnConnect) {
             channel.show(true);
         }
-        vscode.window.showInformationMessage(`AutoJs6 设备接入: ${device}`);
+        vscode.window.showInformationMessage(t('AutoJs6 device connected: {0}', String(device)));
         this.updateStatusBar();
     }
 
     private onDeviceCommand(device: Device, param: DeviceCommandParam) {
         const cmd = param?.['\xa0cmd\xa0'];
         if (!DEVICE_TRIGGERABLE_COMMANDS.has(cmd)) {
-            vscode.window.showErrorMessage(`接收到未知指令 "${cmd}" (来自 ${device})`);
+            vscode.window.showErrorMessage(t('Unknown command "{0}" from {1}', cmd, String(device)));
             return;
         }
-        vscode.window.showInformationMessage(`执行来自 ${device} 的指令 "${cmd}"`);
+        vscode.window.showInformationMessage(t('Running command "{0}" from {1}', cmd, String(device)));
         vscode.commands.executeCommand(`extension.${cmd}`, param.path);
     }
 
@@ -318,7 +319,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
             return;
         }
         if (!DEVICE_TRIGGERABLE_COMMANDS.has(cmd)) {
-            vscode.window.showErrorMessage(`接收到未知的 HTTP 指令 "${cmd}"`);
+            vscode.window.showErrorMessage(t('Unknown HTTP command "{0}"', cmd));
             return;
         }
         vscode.commands.executeCommand(`extension.${cmd}`, filePath);
@@ -365,16 +366,16 @@ export class Extension implements vscode.Disposable, PairingHandler {
         const sessions = this.devices.reconnectSessions;
         const lines: string[] = [];
         if (count === 0) {
-            this.statusBar.text = sessions.length > 0 ? `$(sync~spin) AutoJs6: 重连中 (${sessions.length})` : '$(device-mobile) AutoJs6: 无设备';
+            this.statusBar.text = sessions.length > 0 ? `$(sync~spin) ${t('AutoJs6: reconnecting ({0})', sessions.length)}` : `$(device-mobile) ${t('AutoJs6: no device')}`;
             lines.push(this.devices.isListening
-                ? `AutoJs6: 未连接设备. 正在监听端口 ${this.devices.listeningPort}. 点击建立连接.`
-                : `AutoJs6: 未连接设备. 端口 ${Settings.serverPort} 监听失败. 点击建立连接.`);
+                ? t('AutoJs6: no device connected. Listening on port {0}. Click to connect.', this.devices.listeningPort)
+                : t('AutoJs6: no device connected. Port {0} is not listening. Click to connect.', Settings.serverPort));
         } else {
             this.statusBar.text = sessions.length > 0 ? `$(sync~spin) AutoJs6: ${count}` : `$(device-mobile) AutoJs6: ${count}`;
-            lines.push('AutoJs6 已连接设备:', ...this.devices.devices.map(d => `- ${d} [${d.versionName}]`));
+            lines.push(t('AutoJs6 connected devices:'), ...this.devices.devices.map(d => `- ${d} [${d.versionName}]`));
         }
         if (sessions.length > 0) {
-            lines.push('正在重连:', ...sessions.map(s => `- ${describeTarget(s.target)} (第 ${s.attempts + 1} 次${s.lastError ? `, ${s.lastError}` : ''})`));
+            lines.push(t('Reconnecting:'), ...sessions.map(s => `- ${describeTarget(s.target)} (${t('attempt {0}', s.attempts + 1)}${s.lastError ? `, ${s.lastError}` : ''})`));
         }
         this.statusBar.tooltip = lines.join('\n');
         this.statusBar.show();
@@ -407,7 +408,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
 
     private loadTargets(): SavedTarget[] {
         const raw = this.storage.get<SavedTarget[]>(STORAGE_KEY_TARGETS, []);
-        return Array.isArray(raw) ? raw.filter(t => t && typeof t.host === 'string' && typeof t.port === 'number') : [];
+        return Array.isArray(raw) ? raw.filter(target => target && typeof target.host === 'string' && typeof target.port === 'number') : [];
     }
 
     private saveTargets(targets: SavedTarget[]) {
@@ -421,7 +422,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
     private rememberTarget(target: ConnectionTarget) {
         if (target.type === ConnectionType.CLIENT_LAN) return;
         const key = targetKey(target);
-        const targets = this.loadTargets().filter(t => Extension.savedKey(t) !== key);
+        const targets = this.loadTargets().filter(target => Extension.savedKey(target) !== key);
         const saved: SavedTarget = { type: target.type, host: target.host, port: target.port, ts: Date.now() };
         if (target.type === ConnectionType.SERVER_ADB) {
             saved.adbDeviceId = target.adbDeviceId;
@@ -436,7 +437,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
     private forgetTarget(target: ConnectionTarget) {
         const key = targetKey(target);
         const targets = this.loadTargets();
-        const kept = targets.filter(t => Extension.savedKey(t) !== key);
+        const kept = targets.filter(target => Extension.savedKey(target) !== key);
         if (kept.length !== targets.length) {
             this.saveTargets(kept);
             logDebug(`forgot target ${key}`);
@@ -460,7 +461,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
         logDebug(`restoring ${targets.length} connection(s):`, targets);
         targets.forEach((saved) => {
             try {
-                this.devices.startReconnect(this.toConnectionTarget(saved), '恢复上次连接', true);
+                this.devices.startReconnect(this.toConnectionTarget(saved), t('restore last connection'), true);
             } catch (e) {
                 logError('failed to restore connection:', e);
             }
@@ -551,7 +552,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
     private currentEditorOrThrow(): TextEditor {
         const editor = this.lastActiveEditor;
         if (!editor || editor.document.uri.scheme === 'output') {
-            throw new DeviceError('需在正在编辑的文件窗口中使用此命令');
+            throw new DeviceError(t('Use this command in an open editor'));
         }
         return editor;
     }
@@ -560,7 +561,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
 
     private connectedDevicesOrThrow(): Device[] {
         if (!this.devices.hasDevices()) {
-            throw new DeviceError('未发现已连接的设备');
+            throw new DeviceError(t('No connected device'));
         }
         return this.devices.devices;
     }
@@ -572,7 +573,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
         }
         const picked = await showPick({
             title,
-            placeholder: '选择一个设备',
+            placeholder: t('Pick a device'),
             items: devices.map(d => ({ label: d.toString(), description: `AutoJs6 ${d.versionName}`, device: d })),
         });
         return picked && typeof picked === 'object' ? picked.device : undefined;
@@ -585,7 +586,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
         }
         const picked = await showMultiPick({
             title,
-            placeholder: '勾选一个或多个设备, 按回车 (Enter) 键确认',
+            placeholder: t('Check one or more devices, then press Enter'),
             items: devices.map(d => ({ label: d.toString(), description: `AutoJs6 ${d.versionName}`, device: d })),
         });
         return picked?.map(p => p.device);
@@ -609,26 +610,26 @@ export class Extension implements vscode.Disposable, PairingHandler {
     private saveOn(devices: Device[]) {
         const editor = this.currentEditorOrThrow();
         if (editor.document.uri.scheme === REMOTE_SCHEME) {
-            throw new DeviceError('远程文件请直接使用 VSCode 的保存功能');
+            throw new DeviceError(t('Save remote files with the regular VSCode save command'));
         }
         const payload = this.payloadFromEditor(editor);
         const count = this.devices.sendCommand('save', payload, devices);
-        vscode.window.showInformationMessage(`已发送 "${payload.path || payload.name}" 到 ${count} 台设备`);
+        vscode.window.showInformationMessage(t('Sent "{0}" to {1} device(s)', payload.path || payload.name, count));
     }
 
     /* Connection. zh-CN: 连接. */
 
     async connect() {
         const interfaces = util.getBasicNetworkInterfaces();
-        const title = interfaces.length > 0 ? `当前活动 IP: ${interfaces.map(o => o.ip4).join(', ')}` : '未找到可用的局域网 IP 地址';
+        const title = interfaces.length > 0 ? t('Active IP: {0}', interfaces.map(o => o.ip4).join(', ')) : t('No usable LAN IP address found');
         const picked = await showPick({
             title,
-            placeholder: '输入或选择连接建立方式',
+            placeholder: t('Type or pick how to connect'),
             items: [
-                { label: LABEL.ajClientLan, detail: 'AutoJs6 (客户端模式) 主动连接至本机 (输入本机 IP 地址)' },
-                { label: LABEL.ajClientQr, detail: 'AutoJs6 (客户端模式) 扫描二维码后自动连接至本机' },
-                { label: LABEL.ajServerLan, detail: '本机主动连接至 AutoJs6 (服务端模式), 输入设备 IP 地址或域名' },
-                { label: LABEL.ajServerAdb, detail: '本机通过 USB (ADB) 连接至 AutoJs6 (服务端模式)' },
+                { label: LABEL.ajClientLan, detail: t('AutoJs6 (client mode) connects to this PC; enter the IP address of this PC in AutoJs6') },
+                { label: LABEL.ajClientQr, detail: t('AutoJs6 (client mode) scans a QR code and connects to this PC') },
+                { label: LABEL.ajServerLan, detail: t('This PC connects to AutoJs6 (server mode); enter the device IP address or host name') },
+                { label: LABEL.ajServerAdb, detail: t('This PC connects to AutoJs6 (server mode) over USB (ADB)') },
             ],
         });
         if (typeof picked !== 'object') return;
@@ -646,21 +647,21 @@ export class Extension implements vscode.Disposable, PairingHandler {
 
     private async connectToLocalHint(interfaces: util.NIDetails[]) {
         if (!this.devices.isListening) {
-            throw new DeviceError(`端口 ${Settings.serverPort} 未在监听 (可能被其他窗口占用), 请修改 autojs6.server.port 或使用其他连接方式`);
+            throw new DeviceError(t('Port {0} is not listening (probably taken by another window); change autojs6.server.port or use another connection method', Settings.serverPort));
         }
         if (interfaces.length === 0) {
-            throw new DeviceError('未找到可用的局域网 IP 地址');
+            throw new DeviceError(t('No usable LAN IP address found'));
         }
         const ni = await pickNetworkInterface(interfaces);
         if (ni) {
-            vscode.window.showInformationMessage(`在 AutoJs6 侧拉菜单开启客户端模式并连接至 ${ni.ip4}:${this.devices.listeningPort}`, '显示二维码')
+            vscode.window.showInformationMessage(t('Enable client mode in the AutoJs6 drawer and connect to {0}', `${ni.ip4}:${this.devices.listeningPort}`), t('Show QR Code'))
                 .then(choice => choice && this.showQrCode(ni.ip4));
         }
     }
 
     async showQrCode(preferredIp?: string) {
         if (!this.devices.isListening) {
-            throw new DeviceError(`端口 ${Settings.serverPort} 未在监听 (可能被其他窗口占用), 请修改 autojs6.server.port 或使用其他连接方式`);
+            throw new DeviceError(t('Port {0} is not listening (probably taken by another window); change autojs6.server.port or use another connection method', Settings.serverPort));
         }
         await QrCodePanel.show(this.context, this.devices.listeningPort, util.getBasicNetworkInterfaces(), typeof preferredIp === 'string' ? preferredIp : undefined, () => this.issueQrToken());
     }
@@ -674,21 +675,21 @@ export class Extension implements vscode.Disposable, PairingHandler {
         const records = this.loadRecords();
         const recordItems: LanPickItem[] = records.map(r => ({
             label: `${PREFIX.record} - ${r.ip}`,
-            detail: r.ts ? `最近连接: ${util.formatTimestamp(r.ts)}` : undefined,
+            detail: r.ts ? t('Last connected: {0}', util.formatTimestamp(r.ts)) : undefined,
             endpoint: r.ip,
         }));
         if (records.length > 0) {
-            recordItems.push({ label: LABEL.recordClear, detail: '清除保存在本地的全部 IP 地址记录', clear: true });
+            recordItems.push({ label: LABEL.recordClear, detail: t('Remove all locally saved IP addresses'), clear: true });
         }
         const discovery = Settings.discoveryEnabled ? new DeviceDiscovery() : null;
         const searching: LanPickItem = {
-            label: '$(search) 正在搜索局域网内的 AutoJs6 设备...',
-            detail: '需 AutoJs6 6.8.0+ 开启服务端模式及其 "局域网发现" 选项; 也可直接输入地址',
+            label: `$(search) ${t('Searching for AutoJs6 devices on the LAN...')}`,
+            detail: t('Needs AutoJs6 6.8.0+ with server mode and its "LAN discovery" option enabled; an address can also be typed'),
             alwaysShow: true,
         };
         const pick = vscode.window.createQuickPick<LanPickItem>();
-        pick.title = '连接到 AutoJs6 服务端';
-        pick.placeholder = `输入 IP 地址或域名 (可带端口, 默认 ${Settings.clientPort}), 按回车 (Enter) 键建立连接`;
+        pick.title = t('Connect to AutoJs6 Server');
+        pick.placeholder = t('Type an IP address or host name (optionally with a port, default {0}), then press Enter to connect', Settings.clientPort);
         pick.matchOnDescription = true;
         pick.matchOnDetail = true;
         pick.ignoreFocusOut = true;
@@ -697,7 +698,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
             const items: LanPickItem[] = found.map(d => ({
                 label: `${PREFIX.discovered} - ${d.name}`,
                 description: `${d.host}:${d.port}`,
-                detail: `通过局域网发现 (mDNS)${d.version ? `, AutoJs6 ${d.version}` : ''}`,
+                detail: `${t('Found on the LAN (mDNS)')}${d.version ? `, AutoJs6 ${d.version}` : ''}`,
                 endpoint: `${d.host}:${d.port}`,
             }));
             if (discovery && found.length === 0 && pick.busy) {
@@ -731,9 +732,9 @@ export class Extension implements vscode.Disposable, PairingHandler {
         if (picked === undefined) return;
         if (typeof picked === 'string') return this.connectToServerLan(picked);
         if (picked.clear) {
-            if (await confirm('确认清除所有已保存的记录吗')) {
+            if (await confirm(t('Clear all saved records?'))) {
                 this.saveRecords([]);
-                vscode.window.showInformationMessage(`清理完成, 共计 ${records.length} 项`);
+                vscode.window.showInformationMessage(t('Cleared {0} record(s)', records.length));
             }
             return;
         }
@@ -743,10 +744,10 @@ export class Extension implements vscode.Disposable, PairingHandler {
     async connectToServerLan(input: string) {
         const endpoint = parseEndpoint(input, Settings.clientPort);
         if (!endpoint) {
-            throw new DeviceError(`连接 AutoJs6 服务端失败, 无法解析地址 "${input}"`);
+            throw new DeviceError(t('Cannot connect to the AutoJs6 server: invalid address "{0}"', input));
         }
         const target = this.createLanTarget(endpoint.host, endpoint.port);
-        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `正在连接至 AutoJs6 服务端 (${endpoint.host}:${endpoint.port})...` }, async () => {
+        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t('Connecting to the AutoJs6 server ({0})...', `${endpoint.host}:${endpoint.port}`) }, async () => {
             try {
                 await this.devices.connectTo(target);
             } catch (e) {
@@ -755,14 +756,14 @@ export class Extension implements vscode.Disposable, PairingHandler {
                     return;
                 }
                 logError(e);
-                showErrorWithAction(`无法连接至 AutoJs6 服务端 (${endpoint.host}:${endpoint.port}): ${(e as Error).message}`, '查看解决方案', () => {
-                    vscode.window.showInformationMessage('AutoJs6 服务端连接诊断', {
+                showErrorWithAction(t('Cannot connect to the AutoJs6 server ({0}): {1}', `${endpoint.host}:${endpoint.port}`, (e as Error).message), t('Troubleshoot'), () => {
+                    vscode.window.showInformationMessage(t('AutoJs6 server connection diagnostics'), {
                         modal: true,
                         detail: [
-                            '检查 AutoJs6 主页侧拉抽屉是否已开启 "服务端模式"',
-                            '检查两端设备是否位于同一局域网',
-                            `检查 AutoJs6 所在设备的防火墙是否允许 ${endpoint.port} 端口通信`,
-                            '尝试使用其他方式 (如 ADB 或二维码) 建立连接',
+                            t('Check that "Server mode" is enabled in the AutoJs6 drawer'),
+                            t('Check that both devices are on the same LAN'),
+                            t('Check that the firewall on the AutoJs6 device allows TCP port {0}', endpoint.port),
+                            t('Try another connection method (ADB or QR code)'),
                         ].map(s => `- ${s}`).join('\n'),
                     });
                 });
@@ -826,9 +827,9 @@ export class Extension implements vscode.Disposable, PairingHandler {
         if (!Settings.confirmUnknownDevices) {
             return Promise.resolve('allow');
         }
-        const trust = '允许并记住';
-        const once = '仅本次允许';
-        const deny = '拒绝';
+        const trust = t('Allow and Remember');
+        const once = t('Allow Once');
+        const deny = t('Deny');
         return new Promise<PairingVerdict>((resolve) => {
             let settled = false;
             const finish = (verdict: PairingVerdict) => {
@@ -838,7 +839,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
                 resolve(verdict);
             };
             const timer = setTimeout(() => finish('deny'), PAIRING_PROMPT_TIMEOUT_MS);
-            const message = `AutoJs6 设备 "${device.name}" (${device.remoteAddress}) 请求连接到本机 (${device.versionName || '未知版本'}, ID ${device.deviceId.slice(0, 8) || '?'}). 通过扫描二维码连接的设备无需确认.`;
+            const message = t('AutoJs6 device "{0}" ({1}) wants to connect to this PC ({2}, ID {3}). Devices that scan the QR code do not need approval.', device.name, device.remoteAddress, device.versionName || t('unknown version'), device.deviceId.slice(0, 8) || '?');
             vscode.window.showInformationMessage(message, trust, once, deny).then(
                 (choice) => finish(choice === trust ? 'trust' : choice === once ? 'allow' : 'deny'),
                 () => finish('deny'),
@@ -851,18 +852,18 @@ export class Extension implements vscode.Disposable, PairingHandler {
         const trusted = this.loadTrusted();
         const ids = Object.keys(trusted).sort((a, b) => (trusted[b].ts || 0) - (trusted[a].ts || 0));
         if (ids.length === 0) {
-            vscode.window.showInformationMessage('暂无已信任的 AutoJs6 设备 (扫码连接的设备, 或在连接提示中选择 "允许并记住" 的设备会出现在这里)');
+            vscode.window.showInformationMessage(t('No trusted AutoJs6 device yet (devices that scanned the QR code or were allowed with "Allow and Remember" appear here)'));
             return;
         }
         const picked = await showMultiPick({
-            title: '已信任的 AutoJs6 设备',
-            placeholder: '勾选要移除信任的设备, 按回车 (Enter) 键确认',
-            items: ids.map(id => ({ label: trusted[id].name || id, description: id, detail: `信任时间: ${util.formatTimestamp(trusted[id].ts)}` })),
+            title: t('Trusted AutoJs6 Devices'),
+            placeholder: t('Check the devices to remove, then press Enter'),
+            items: ids.map(id => ({ label: trusted[id].name || id, description: id, detail: t('Trusted since: {0}', util.formatTimestamp(trusted[id].ts)) })),
         });
         if (!picked || picked.length === 0) return;
         picked.forEach(item => delete trusted[item.description || '']);
         await this.context.globalState.update(STORAGE_KEY_TRUSTED, trusted);
-        vscode.window.showInformationMessage(`已移除 ${picked.length} 台设备的信任, 下次连接时将重新询问`);
+        vscode.window.showInformationMessage(t('Removed trust from {0} device(s); they will be asked again next time', picked.length));
     }
 
     private createLanTarget(host: string, port: number): ConnectionTarget {
@@ -880,10 +881,10 @@ export class Extension implements vscode.Disposable, PairingHandler {
                 // Fail fast (and cheaply) while the device is unplugged or unauthorized. zh-CN: 设备未连接/未授权时快速失败.
                 const info = this.adb.listDevices().find(d => d.id === adbDeviceId);
                 if (!info) {
-                    throw new DeviceError(`ADB 设备 ${adbDeviceId} 未连接`);
+                    throw new DeviceError(t('ADB device {0} is not connected', adbDeviceId));
                 }
                 if (info.state !== 'device') {
-                    throw new DeviceError(`ADB 设备 ${adbDeviceId} 状态为 ${info.state}`);
+                    throw new DeviceError(t('ADB device {0} is in state {1}', adbDeviceId, info.state));
                 }
                 this.releaseAdbForwardById(adbDeviceId);
                 const localPort = await findFreePort();
@@ -901,7 +902,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
             devices = this.adb.listDevices();
         } catch (e) {
             if (e instanceof AdbNotFoundError) {
-                showErrorWithAction('ADB 可能未安装或未被正确配置, 可在设置 autojs6.adb.path 中指定 adb 路径', '打开设置', () => {
+                showErrorWithAction(t('adb seems to be missing or misconfigured; set its path in autojs6.adb.path'), t('Open Settings'), () => {
                     vscode.commands.executeCommand('workbench.action.openSettings', 'autojs6.adb.path');
                 });
                 return;
@@ -912,18 +913,18 @@ export class Extension implements vscode.Disposable, PairingHandler {
         if (online.length === 0) {
             const offline = devices.filter(d => d.state !== 'device');
             throw new DeviceError(offline.length > 0
-                ? `未发现可用的 ADB 设备 (${offline.map(d => `${d.id}: ${d.state}`).join(', ')}), 请在设备上确认 USB 调试授权`
-                : '未发现通过 ADB 连接的设备');
+                ? t('No usable ADB device ({0}); confirm the USB debugging prompt on the device', offline.map(d => `${d.id}: ${d.state}`).join(', '))
+                : t('No device connected over ADB'));
         }
         const picked = await showPick({
-            title: '连接到 AutoJs6 服务端 (ADB)',
-            placeholder: '选择需要连接的设备, 按回车 (Enter) 键建立连接',
-            items: online.map(d => ({ label: d.name, detail: `型号: ${d.model}, 产品名称: ${d.product}`, adb: d })),
+            title: t('Connect to AutoJs6 Server (ADB)'),
+            placeholder: t('Pick the device to connect, then press Enter'),
+            items: online.map(d => ({ label: d.name, detail: t('Model: {0}, product: {1}', d.model, d.product), adb: d })),
         });
         if (typeof picked !== 'object') return;
         const dev = picked.adb;
         const target = this.createAdbTarget(dev.id, dev.name);
-        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `正在通过 ADB 连接至 ${dev.name}...` }, async () => {
+        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t('Connecting to {0} over ADB...', dev.name) }, async () => {
             try {
                 await this.devices.connectTo(target);
             } catch (e) {
@@ -932,7 +933,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
                     return;
                 }
                 logError(e);
-                vscode.window.showErrorMessage(`无法通过 ADB 连接至 ${dev.name}: ${(e as Error).message}. 请确认 AutoJs6 侧拉菜单已开启 "服务端模式 (Server mode)"`);
+                vscode.window.showErrorMessage(t('Cannot connect to {0} over ADB: {1}. Make sure "Server mode" is enabled in the AutoJs6 drawer', dev.name, (e as Error).message));
             }
         });
     }
@@ -962,8 +963,8 @@ export class Extension implements vscode.Disposable, PairingHandler {
         this.devices.reconnectSessions.forEach(s => this.forgetTarget(s.target));
         this.devices.disconnectAll('user');
         vscode.window.showInformationMessage(count > 0 || reconnecting > 0
-            ? `AutoJs6 已断开所有连接 (${count})${reconnecting > 0 ? `, 并停止 ${reconnecting} 个重连` : ''}`
-            : 'AutoJs6 当前没有已建立的连接');
+            ? `${t('AutoJs6: disconnected all connections ({0})', count)}${reconnecting > 0 ? t(', stopped {0} reconnect session(s)', reconnecting) : ''}`
+            : t('AutoJs6: no active connection'));
     }
 
     /** Retry pending reconnects now, or restore the last targets when nothing is pending. zh-CN: 立即重试重连, 无重连时恢复上次连接. */
@@ -971,26 +972,26 @@ export class Extension implements vscode.Disposable, PairingHandler {
         const sessions = this.devices.reconnectSessions;
         if (sessions.length > 0) {
             sessions.forEach(s => this.devices.retryNow(s.key));
-            vscode.window.showInformationMessage(`AutoJs6: 正在重试 ${sessions.map(s => describeTarget(s.target)).join(', ')}`);
+            vscode.window.showInformationMessage(t('AutoJs6: retrying {0}', sessions.map(s => describeTarget(s.target)).join(', ')));
             return;
         }
-        const targets = this.loadTargets().filter(t => !this.devices.hasTarget(this.toConnectionTarget(t)));
+        const targets = this.loadTargets().filter(target => !this.devices.hasTarget(this.toConnectionTarget(target)));
         if (targets.length === 0) {
-            vscode.window.showInformationMessage('AutoJs6: 没有可恢复的连接记录');
+            vscode.window.showInformationMessage(t('AutoJs6: no connection to restore'));
             return;
         }
-        targets.forEach(t => this.devices.startReconnect(this.toConnectionTarget(t), '手动恢复', true));
-        vscode.window.showInformationMessage(`AutoJs6: 正在重新连接 ${targets.map(t => describeTarget(this.toConnectionTarget(t))).join(', ')}`);
+        targets.forEach(target => this.devices.startReconnect(this.toConnectionTarget(target), t('manual restore'), true));
+        vscode.window.showInformationMessage(t('AutoJs6: reconnecting to {0}', targets.map(target => describeTarget(this.toConnectionTarget(target))).join(', ')));
     }
 
     cancelReconnect() {
         const sessions = this.devices.reconnectSessions;
         if (sessions.length === 0) {
-            vscode.window.showInformationMessage('AutoJs6: 当前没有进行中的重连');
+            vscode.window.showInformationMessage(t('AutoJs6: no reconnect in progress'));
             return;
         }
         this.devices.cancelReconnect();
-        vscode.window.showInformationMessage(`AutoJs6: 已停止重连 ${sessions.map(s => describeTarget(s.target)).join(', ')}`);
+        vscode.window.showInformationMessage(t('AutoJs6: stopped reconnecting to {0}', sessions.map(s => describeTarget(s.target)).join(', ')));
     }
 
     async disconnectDevice(arg?: { device?: Device }) {
@@ -998,7 +999,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
         if (arg && arg.device instanceof Device) {
             targets = [ arg.device ];
         } else {
-            targets = await this.pickDevices('选择需要断开的设备');
+            targets = await this.pickDevices(t('Pick the devices to disconnect'));
         }
         targets?.forEach(d => d.disconnect());
     }
@@ -1010,16 +1011,16 @@ export class Extension implements vscode.Disposable, PairingHandler {
             return this.connect();
         }
         type Item = vscode.QuickPickItem & { device?: Device; session?: ReconnectSession; action?: string };
-        const items: Item[] = devices.map(d => ({ label: d.toString(), description: `AutoJs6 ${d.versionName} | 协议 v${d.protocolVersion}`, device: d }));
+        const items: Item[] = devices.map(d => ({ label: d.toString(), description: `AutoJs6 ${d.versionName} | ${t('protocol v{0}', d.protocolVersion)}`, device: d }));
         sessions.forEach(s => items.push({
-            label: `$(sync~spin) 重连中: ${describeTarget(s.target)}`,
-            description: `第 ${s.attempts + 1} 次${s.lastError ? ` | ${s.lastError}` : ''}`,
+            label: `$(sync~spin) ${t('Reconnecting: {0}', describeTarget(s.target))}`,
+            description: `${t('attempt {0}', s.attempts + 1)}${s.lastError ? ` | ${s.lastError}` : ''}`,
             session: s,
         }));
-        items.push({ label: '$(add) 建立新连接', action: 'connect' });
+        items.push({ label: `$(add) ${t('New Connection')}`, action: 'connect' });
         const picked = await showPick<Item>({
-            title: 'AutoJs6 设备',
-            placeholder: '选择设备以查看操作',
+            title: t('AutoJs6 Devices'),
+            placeholder: t('Pick a device to see its actions'),
             items,
         });
         if (typeof picked !== 'object') return;
@@ -1031,8 +1032,8 @@ export class Extension implements vscode.Disposable, PairingHandler {
             const choice = await showPick({
                 title: describeTarget(session.target),
                 items: [
-                    { label: '$(refresh) 立即重试', action: 'retry' },
-                    { label: '$(close) 停止重连', action: 'cancel' },
+                    { label: `$(refresh) ${t('Retry Now')}`, action: 'retry' },
+                    { label: `$(close) ${t('Stop Reconnecting')}`, action: 'cancel' },
                 ],
             });
             if (typeof choice !== 'object') return;
@@ -1047,11 +1048,11 @@ export class Extension implements vscode.Disposable, PairingHandler {
         const action = await showPick({
             title: device.toString(),
             items: [
-                { label: '$(output) 显示日志', action: 'log' },
-                { label: '$(play) 运行当前脚本', action: 'run' },
-                { label: '$(save) 保存当前脚本到此设备', action: 'save' },
-                { label: '$(folder) 浏览设备文件', action: 'browse' },
-                { label: '$(debug-disconnect) 断开连接', action: 'disconnect' },
+                { label: `$(output) ${t('Show Log')}`, action: 'log' },
+                { label: `$(play) ${t('Run Current Script')}`, action: 'run' },
+                { label: `$(save) ${t('Save Current Script to This Device')}`, action: 'save' },
+                { label: `$(folder) ${t('Browse Device Files')}`, action: 'browse' },
+                { label: `$(debug-disconnect) ${t('Disconnect')}`, action: 'disconnect' },
             ],
         });
         if (typeof action !== 'object') return;
@@ -1083,7 +1084,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
     }
 
     async runOnDevice(urlOrArgs?: string | Uri) {
-        const devices = await this.pickDevices('选择运行脚本的设备');
+        const devices = await this.pickDevices(t('Pick the devices to run the script on'));
         if (devices) this.runOn(devices, Extension.refinePath(urlOrArgs));
     }
 
@@ -1091,7 +1092,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
         const fsPath = Extension.refinePath(urlOrArgs);
         const id = fsPath || this.lastActiveEditor?.document.fileName;
         if (!id) {
-            throw new DeviceError('需在正在编辑的文件窗口中使用此命令');
+            throw new DeviceError(t('Use this command in an open editor'));
         }
         this.devices.sendCommand('stop', { id }, this.connectedDevicesOrThrow());
     }
@@ -1116,7 +1117,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
     }
 
     async saveToDevice() {
-        const devices = await this.pickDevices('选择保存脚本的设备');
+        const devices = await this.pickDevices(t('Pick the devices to save the script to'));
         if (devices) this.saveOn(devices);
     }
 
@@ -1127,7 +1128,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
     async newProject(urlOrArgs?: string | Uri) {
         let target = Extension.refinePath(urlOrArgs);
         if (!target || !fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
-            const uris = await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, openLabel: '选择项目目录' });
+            const uris = await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, openLabel: t('Select Project Folder') });
             if (!uris || uris.length === 0) return;
             target = uris[0].fsPath;
         }
@@ -1167,7 +1168,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
             const editorUri = this.lastActiveEditor?.document.uri;
             const workspaceFolder = (editorUri && vscode.workspace.getWorkspaceFolder(editorUri)) || vscode.workspace.workspaceFolders?.[0];
             if (!workspaceFolder) {
-                throw new DeviceError('需要一个已打开的 AutoJs6 项目');
+                throw new DeviceError(t('An open AutoJs6 project is required'));
             }
             folder = workspaceFolder.uri.fsPath;
         }
@@ -1187,7 +1188,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
     private async sendProjectCommand(command: ProjectCommand, urlOrArgs?: string | Uri, force = false) {
         const folder = this.prepareProject(urlOrArgs);
         const devices = this.connectedDevicesOrThrow();
-        const count = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: `AutoJs6: 同步项目 ${path.basename(folder)}` },
+        const count = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: t('AutoJs6: syncing project {0}', path.basename(folder)) },
             () => this.devices.sendProjectCommand(folder, command, devices, force));
         logDebug(`${command} "${folder}" sent to ${count} device(s)`);
     }
@@ -1210,7 +1211,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
 
     /** Force a full re-upload, e.g. after files were removed on the device (issue #29). zh-CN: 强制全量重新同步 (issue #29). */
     async resyncProject(urlOrArgs?: string | Uri) {
-        if (await confirm('确认重新完整同步项目吗', '将向设备发送项目全部文件并覆盖同名文件')) {
+        if (await confirm(t('Resync the whole project?'), t('All project files will be sent to the device, overwriting files with the same name'))) {
             return this.sendProjectCommand('save_project', urlOrArgs, true);
         }
     }
@@ -1223,22 +1224,22 @@ export class Extension implements vscode.Disposable, PairingHandler {
     async pullProject(urlOrArgs?: string | Uri) {
         const folder = this.prepareProject(urlOrArgs);
         const name = path.basename(folder);
-        const device = await this.pickDevice(`选择要拉取项目 ${name} 变更的设备`);
+        const device = await this.pickDevice(t('Pick the device to pull changes of project {0} from', name));
         if (!device) return;
         const readRemote = (remotePath: string) => this.fsProvider.readFile(remoteUri(device, remotePath));
         const plan = await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: `正在比较项目 ${name} 与设备 ${device.name} 上的副本...` },
+            { location: vscode.ProgressLocation.Notification, title: t('Comparing project {0} with its copy on {1}...', name, device.name) },
             () => planPull(device, folder, this.project?.fileFilter || null, readRemote),
         );
-        const missing = plan.missingOnDevice.length > 0 ? `; 本地另有 ${plan.missingOnDevice.length} 个文件在设备上不存在 (未处理)` : '';
+        const missing = plan.missingOnDevice.length > 0 ? t('; {0} local file(s) do not exist on the device (left untouched)', plan.missingOnDevice.length) : '';
         if (plan.changes.length === 0) {
-            vscode.window.showInformationMessage(`设备 ${device.name} 上的项目 ${name} 与本地一致 (已比较 ${plan.scanned} 个文件${missing})`);
+            vscode.window.showInformationMessage(t('Project {0} on {1} matches the local copy ({2} file(s) compared{3})', name, device.name, plan.scanned, missing));
             return;
         }
         const picked = await pickChanges(device, folder, plan);
         if (!picked || picked.length === 0) return;
         const count = await applyPull(device, folder, picked, readRemote);
-        vscode.window.showInformationMessage(`已从设备 ${device.name} 拉取 ${count} 个文件到项目 ${name}${missing}`);
+        vscode.window.showInformationMessage(t('Pulled {0} file(s) from {1} into project {2}{3}', count, device.name, name, missing));
     }
 }
 

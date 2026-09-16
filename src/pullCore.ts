@@ -5,6 +5,7 @@ import { Device, DeviceError } from './device';
 import { FileFilter, walk } from './diff';
 import { logDebug } from './logger';
 import { joinRemotePath, RemoteEntry, RemoteRoots, toPosixPath } from './protocol';
+import { t } from './i18n';
 
 /*
  * Pull files changed on the device back into the local project (roadmap 5.7). This module must not import
@@ -59,7 +60,7 @@ export async function locateRemoteProject(device: Device, localDir: string): Pro
     const remoteDir = joinRemotePath(roots.workingDir, path.basename(localDir));
     const stat = await device.request<{ exists: boolean; type?: string }>('fs.stat', { path: remoteDir });
     if (!stat.exists || stat.type !== 'directory') {
-        throw new DeviceError(`设备 ${device.name} 上不存在项目目录 ${remoteDir}, 请先执行 "保存项目到设备"`, device);
+        throw new DeviceError(t('Project folder {0} does not exist on {1}; run "Save Project" first', remoteDir, device.name), device);
     }
     return remoteDir;
 }

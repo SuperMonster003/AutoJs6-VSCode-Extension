@@ -2,13 +2,14 @@ import * as vscode from 'vscode';
 import { Disposable, QuickPickItem, ThemeIcon } from 'vscode';
 import * as util from './util';
 import { logDebug } from './logger';
+import { t } from './i18n';
 
-export const STRING_YES = '是 (Yes)';
-export const STRING_NO = '否 (No)';
+export const STRING_YES = t('Yes');
+export const STRING_NO = t('No');
 
 const closeButton: vscode.QuickInputButton = {
     iconPath: new ThemeIcon('close'),
-    tooltip: '关闭 (Close)',
+    tooltip: t('Close'),
 };
 
 export interface PickOptions<T extends QuickPickItem> {
@@ -122,7 +123,7 @@ export function showMultiPick<T extends QuickPickItem>(options: PickOptions<T>):
 export async function confirm(title: string, detail?: string): Promise<boolean> {
     const picked = await showPick({
         title,
-        placeholder: detail || '选择 "是" 继续, 或按 Esc 取消',
+        placeholder: detail || t('Pick "Yes" to continue or press Esc to cancel'),
         items: [ { label: STRING_YES }, { label: STRING_NO } ],
     });
     return typeof picked === 'object' && picked.label === STRING_YES;
@@ -136,15 +137,15 @@ export async function promptInput(options: vscode.InputBoxOptions): Promise<stri
 export function translateNetworkType(type: string): string {
     switch ((type || '').toLowerCase()) {
         case 'wired':
-            return '有线网络';
+            return t('Wired');
         case 'wireless':
-            return '无线网络';
+            return t('Wireless');
         case 'virtual':
-            return '虚拟网络';
+            return t('Virtual');
         case 'unknown':
-            return '未知网络';
+            return t('Unknown');
         case 'other':
-            return '其他网络';
+            return t('Other');
         default:
             return (type || '').toUpperCase();
     }
@@ -158,7 +159,7 @@ interface NIItem extends QuickPickItem {
  * Pick a local network interface; details are fetched lazily in the background.
  * zh-CN: 选择本机网络接口, 详细信息在后台补充.
  */
-export async function pickNetworkInterface(items: util.NIDetails[], title = '当前活动的网络接口'): Promise<util.NIDetails | undefined> {
+export async function pickNetworkInterface(items: util.NIDetails[], title = t('Active network interfaces')): Promise<util.NIDetails | undefined> {
     const sep = ' | ';
     const toItem = (ni: util.NIDetails): NIItem => {
         let label = ni.iface;
@@ -166,12 +167,12 @@ export async function pickNetworkInterface(items: util.NIDetails[], title = '当
         if (ni.ifaceName) label += sep + ni.ifaceName;
         if (ni.type) detail += sep + translateNetworkType(ni.type);
         if (ni.speed !== undefined && ni.speed !== 'N/A') detail += sep + ni.speed + ' Mbps';
-        if (ni.default) detail += sep + '默认网络接口';
+        if (ni.default) detail += sep + t('default interface');
         return { label, detail, ni, description: ni.default ? '$(star-full)' : undefined };
     };
     const picked = await showPick<NIItem>({
         title,
-        placeholder: '输入或选择一个网络接口 [ 正在后台获取详细信息... ]',
+        placeholder: t('Type or pick a network interface [ loading details... ]'),
         items: items.map(toItem),
         matchOnDetail: true,
         onCreated: (input) => {
@@ -182,7 +183,7 @@ export async function pickNetworkInterface(items: util.NIDetails[], title = '当
                 }
             }).catch(e => logDebug(e)).finally(() => {
                 input.busy = false;
-                input.placeholder = '输入或选择一个网络接口';
+                input.placeholder = t('Type or pick a network interface');
             });
         },
     });

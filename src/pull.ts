@@ -5,6 +5,7 @@ import { logDebug } from './logger';
 import { PullPlan, RemoteChange, RemoteReader, writeLocalFile } from './pullCore';
 import { remoteUri } from './remoteFs';
 import { formatSize, formatTimestamp } from './util';
+import { t } from './i18n';
 
 /*
  * UI half of "pull project changes from the device" (roadmap 5.7): a multi-select picker with per-file diff
@@ -22,18 +23,18 @@ interface ChangeItem extends vscode.QuickPickItem {
  * zh-CN: 让用户选择要拉取的文件. 行尾按钮打开差异 (已修改) 或设备端文件 (新增), 不会关闭列表.
  */
 export function pickChanges(device: Device, localDir: string, plan: PullPlan): Promise<RemoteChange[] | undefined> {
-    const diffButton: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('diff'), tooltip: '预览差异 (本地 ↔ 设备)' };
-    const openButton: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('go-to-file'), tooltip: '查看设备端文件' };
+    const diffButton: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('diff'), tooltip: t('Preview diff (local vs device)') };
+    const openButton: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('go-to-file'), tooltip: t('Open the device file') };
     const pick = vscode.window.createQuickPick<ChangeItem>();
-    pick.title = `从 ${device.name} 拉取项目 ${path.basename(localDir)} 的变更 (${plan.changes.length} 个文件)`;
-    pick.placeholder = '勾选要拉回本地的文件, 按回车 (Enter) 键确认; 点击行尾图标预览差异';
+    pick.title = t('Pull changes of project {0} from {1} ({2} file(s))', path.basename(localDir), device.name, plan.changes.length);
+    pick.placeholder = t('Check the files to pull, then press Enter; use the row icon to preview the diff');
     pick.canSelectMany = true;
     pick.matchOnDescription = true;
     pick.ignoreFocusOut = true;
     pick.items = plan.changes.map((change): ChangeItem => ({
         label: `$(${change.kind === 'added' ? 'diff-added' : 'diff-modified'}) ${change.relativePath}`,
-        description: change.kind === 'added' ? '设备端新增' : '设备端已修改',
-        detail: `${formatSize(change.size)}, 设备端修改时间 ${formatTimestamp(change.mtime)}`,
+        description: change.kind === 'added' ? t('added on device') : t('modified on device'),
+        detail: t('{0}, modified on the device at {1}', formatSize(change.size), formatTimestamp(change.mtime)),
         buttons: [ change.kind === 'modified' ? diffButton : openButton ],
         change,
     }));
@@ -52,7 +53,7 @@ export function pickChanges(device: Device, localDir: string, plan: PullPlan): P
             try {
                 if (change.kind === 'modified') {
                     const local = vscode.Uri.file(path.join(localDir, ...change.relativePath.split('/')));
-                    await vscode.commands.executeCommand('vscode.diff', local, remote, `${change.relativePath} (本地 ↔ ${device.name})`, { preview: true, preserveFocus: true });
+                    await vscode.commands.executeCommand('vscode.diff', local, remote, `${change.relativePath} (${t('local')} ↔ ${device.name})`, { preview: true, preserveFocus: true });
                 } else {
                     await vscode.commands.executeCommand('vscode.open', remote, { preview: true, preserveFocus: true });
                 }
@@ -68,12 +69,12 @@ export function pickChanges(device: Device, localDir: string, plan: PullPlan): P
 
 /** Copy the chosen files from the device into the project with a cancellable progress. zh-CN: 带可取消进度地将所选文件从设备复制到项目. */
 export function applyPull(device: Device, localDir: string, changes: RemoteChange[], readRemote: RemoteReader): Promise<number> {
-    const title = `从 ${device.name} 拉取 ${changes.length} 个文件`;
+    const title = t('Pulling {0} file(s) from {1}', changes.length, device.name);
     return Promise.resolve(vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (progress, token) => {
         let done = 0;
         for (const change of changes) {
             if (token.isCancellationRequested) {
-                throw new DeviceError(`已取消拉取, 完成 ${done} / ${changes.length} 个文件`, device);
+                throw new DeviceError(t('Pull cancelled after {0} of {1} file(s)', done, changes.length), device);
             }
             progress.report({ message: change.relativePath, increment: 100 / changes.length });
             const data = await readRemote(change.remotePath);

@@ -60,7 +60,7 @@ test('locateRemoteProject resolves <workingDir>/<project name> and rejects a mis
     const name = path.basename(local);
     const device = fakeDevice('/sdcard/Scripts', { [`/sdcard/Scripts/${name}/main.js`]: 'x' });
     assert.equal(await locateRemoteProject(device, local), `/sdcard/Scripts/${name}`);
-    await assert.rejects(() => locateRemoteProject(fakeDevice('/sdcard/Scripts', {}), local), /不存在项目目录/);
+    await assert.rejects(() => locateRemoteProject(fakeDevice('/sdcard/Scripts', {}), local), /does not exist on/);
 });
 
 test('listRemoteFiles recurses, keys by relative posix path and honours the ignore filter', async () => {

@@ -34,7 +34,7 @@
 - [x] 1.6 `FileObserver.walk` 在遍历阶段即跳过 ignore 目录 (避免遍历 node_modules), 移除整包字节 dump 日志
 - [x] 1.7 增加 `npm test` (Node 内置 test runner) 覆盖帧解析/路径工具/QR payload 等纯逻辑
 - [x] 1.8 `tsconfig` 开启 `strict` 子集 (`noImplicitThis`, `strictBindCallApply`) 并修复类型问题
-- [ ] 1.9 全量国际化 (zh-CN / en), 所有用户可见字符串走 `i18n`
+- [x] 1.9 全量国际化 (zh-CN / en), 所有用户可见字符串走 `i18n` (2026-09-17: 源字符串改为英文并经 `vscode.l10n` 翻译, `l10n/bundle.l10n.zh-cn.json` 206 条与源码 `t()` 调用一一对应; `package.nls.json` / `package.nls.zh-cn.json` 覆盖命令标题, 视图, 欢迎页与配置说明; 无 `vscode` 时 `t()` 回退为英文源串)
 - [x] 1.10 使用 `esbuild` 打包以缩减 vsix 体积 (9.6 MB → 0.96 MB; `tiny-pinyin` 与系统路由表探测替代 `pinyin` / `systeminformation`)
 
 ## 2. Bug 修复 (Fix)
@@ -173,5 +173,6 @@
 | 配对 (2026-09-17): 未知设备 → `pending` hello → 允许 / 拒绝; 二维码令牌; 已信任设备直连 | 通过: 设备显示 "等待 VSCode 端确认", 允许后握手完成; 拒绝后设备收到 `errorMessage` 并关闭且不重连; 令牌被消费并记住设备; 再次连接无需确认 |
 | 分块传输 (2026-09-17): 3 MiB 随机文件分 3 块上传 / 下载 | 通过: 本机与设备 md5 一致, 上传 332 ms, 下载 187 ms (ADB 转发) |
 | 拉取项目变更 (2026-09-17): `save_project` 后在设备端修改 a.js / 新增 sub/c.js | 通过: 计划列出 `modified:a.js`, `added:sub/c.js`, 本地独有文件仅提示; 拉取后再次比较无差异 (md5 路径与旧版内容比较路径均通过) |
+| 国际化 (2026-09-17) | 通过 (静态): `npm test` 26 项 (含无 vscode 环境下 `t()` 回退), 脚本校验 bundle 键与 `t()` 调用无缺失 / 无冗余, 清单 37 条命令标题 `%key%` 唯一; 显示语言切换效果待在 VSCode 中人工确认 |
 | 服务端管理器 "局域网发现 (mDNS)" 开关 | 通过: 关闭 → `unregistered`, 开启 → `registered` (logcat) |
 | mDNS (2026-09-17): 宿主 NSD 注册, 插件逐接口浏览 | 通过: 发现 `Sony XQ-DQ72 192.168.3.213:7347 v6.8.0 p2`; 通配 socket 在多网卡 Windows 上收不到应答, 已改为逐接口绑定 |
