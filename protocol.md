@@ -168,7 +168,7 @@ AutoJs6 -> 插件:
 |---|---|---|
 | `sys.info` | - | `{ appVersion, appVersionCode, protocolVersion, features, deviceName, sdk, workingDir, externalStorage }` |
 | `fs.roots` | - | `{ workingDir, externalStorage, roots: [ { name, path } ] }` |
-| `fs.list` | `{ path }` | `{ path, entries: [ { name, path, type: "file" \| "directory", size, mtime } ] }` |
+| `fs.list` | `{ path, hash? }` | `{ path, entries: [ { name, path, type: "file" \| "directory", size, mtime, md5? } ] }` (`hash: true` 时不超过 16 MB 的文件附带 `md5`, 6.8.0+) |
 | `fs.stat` | `{ path }` | `{ path, exists, type?, size?, mtime? }` |
 | `fs.read` | `{ path, encoding?: "utf8" \| "base64", offset?, length? }` | `{ path, size, offset, length, eof, encoding, content }` (单次最大 32 MB; `size` 为文件总长, 见 6.1) |
 | `fs.write` | `{ path, content, encoding?, create?, overwrite?, mkdirs?, append? }` | `{ path, size, written, mtime }` (`append` 需文件已存在, 见 6.1) |
@@ -185,6 +185,14 @@ AutoJs6 -> 插件:
 
 * 读取: 先 `fs.stat` 取 `size`, 再循环 `fs.read { offset, length }` 直到响应 `eof: true` (或返回 0 字节); `offset`/`length` 之一存在即视为分块读取.
 * 写入: 首块 `fs.write { append: false, overwrite, create }` 覆盖 / 创建文件, 后续块 `append: true` 追加 (此时不再检查 `overwrite`); 取消时设备上的文件可能不完整.
+
+### 6.2 拉取设备端变更 (Pull Project, 插件 1.1.0+)
+
+"从设备拉取项目变更" 命令将设备上 `<工作目录>/<项目目录名>` (即 `save_project` 的保存位置) 与本地项目比较, 列出设备端新增 / 修改的文件供勾选拉回 (可逐文件预览差异):
+
+* 插件递归 `fs.list { hash: true }` 遍历设备项目 (沿用 `project.json` 的 `ignore` 规则), 本地缺失的文件为 "新增", 大小或 `md5` 不同的为 "已修改".
+* 旧版 AutoJs6 不返回 `md5` 时, 同大小且不超过 8 MB 的文件通过 `fs.read` 下载后按内容比较.
+* 仅本地存在的文件只做提示, 不会删除; 拉取通过 `fs.read` (大文件分块, 见 6.1) 完成.
 
 ## 7. 二维码 (QR Code)
 
