@@ -2,7 +2,7 @@
     "name": "autojs6-vscode-ext",
     "displayName": "AutoJs6 VSCode Extension",
     "description": "使用 VSCode 开发 AutoJs6 脚本文件或项目",
-    "version": "1.0.13",
+    "version": "1.1.0",
     "requiredClientVersionName": "6.7.0",
     "requiredClientVersionCode": "3591",
     "publisher": "003",
@@ -12,14 +12,15 @@
         "url": "http://vscext-project.autojs6.com"
     },
     "engines": {
-        "vscode": "^1.34.0"
+        "vscode": "^1.75.0"
     },
     "categories": [
         "Programming Languages",
         "Debuggers"
     ],
     "activationEvents": [
-        "onStartupFinished"
+        "onStartupFinished",
+        "onFileSystem:autojs6fs"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -44,9 +45,37 @@
                 }
             },
             {
+                "command": "extension.showQrCode",
+                "title": "显示连接二维码 (Show QR Code)",
+                "category": "AutoJs6"
+            },
+            {
                 "command": "extension.disconnectAll",
                 "title": "断开所有连接 (Disconnect All)",
                 "category": "AutoJs6"
+            },
+            {
+                "command": "extension.disconnectDevice",
+                "title": "断开指定设备 (Disconnect Device)",
+                "category": "AutoJs6",
+                "icon": "$(debug-disconnect)"
+            },
+            {
+                "command": "extension.selectDevice",
+                "title": "选择设备 (Select Device)",
+                "category": "AutoJs6"
+            },
+            {
+                "command": "extension.reconnect",
+                "title": "重新连接上次的设备 (Reconnect)",
+                "category": "AutoJs6",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "extension.cancelReconnect",
+                "title": "停止自动重连 (Cancel Reconnect)",
+                "category": "AutoJs6",
+                "icon": "$(close)"
             },
             {
                 "command": "extension.run",
@@ -65,11 +94,6 @@
                     "light": "assets/icons/play-circle.svg",
                     "dark": "assets/icons-night/play-circle.svg"
                 }
-            },
-            {
-                "command": "extension.commandsHierarchy",
-                "title": "命令层级 (Commands Hierarchy)",
-                "category": "AutoJs6"
             },
             {
                 "command": "extension.runOnDevice",
@@ -146,6 +170,11 @@
                 }
             },
             {
+                "command": "extension.resyncProject",
+                "title": "重新完整同步项目 (Resync Project)",
+                "category": "AutoJs6"
+            },
+            {
                 "command": "extension.runProject",
                 "title": "运行项目 (Run Project)",
                 "category": "AutoJs6",
@@ -162,6 +191,73 @@
                     "light": "assets/icons/run-all.svg",
                     "dark": "assets/icons-night/run-all.svg"
                 }
+            },
+            {
+                "command": "extension.remoteFiles.browse",
+                "title": "浏览设备文件 (Browse Device Files)",
+                "category": "AutoJs6"
+            },
+            {
+                "command": "extension.remoteFiles.refresh",
+                "title": "刷新 (Refresh)",
+                "category": "AutoJs6",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "extension.remoteFiles.open",
+                "title": "打开 (Open)",
+                "category": "AutoJs6"
+            },
+            {
+                "command": "extension.remoteFiles.run",
+                "title": "在设备上运行 (Run On Device)",
+                "category": "AutoJs6",
+                "icon": "$(play)"
+            },
+            {
+                "command": "extension.remoteFiles.delete",
+                "title": "删除 (Delete)",
+                "category": "AutoJs6",
+                "icon": "$(trash)"
+            },
+            {
+                "command": "extension.remoteFiles.rename",
+                "title": "重命名 (Rename)",
+                "category": "AutoJs6"
+            },
+            {
+                "command": "extension.remoteFiles.newFolder",
+                "title": "新建文件夹 (New Folder)",
+                "category": "AutoJs6",
+                "icon": "$(new-folder)"
+            },
+            {
+                "command": "extension.remoteFiles.newFile",
+                "title": "新建文件 (New File)",
+                "category": "AutoJs6",
+                "icon": "$(new-file)"
+            },
+            {
+                "command": "extension.remoteFiles.uploadCurrentFile",
+                "title": "上传当前文件到此目录 (Upload Current File)",
+                "category": "AutoJs6",
+                "icon": "$(cloud-upload)"
+            },
+            {
+                "command": "extension.remoteFiles.uploadFiles",
+                "title": "上传文件到此目录 (Upload Files)",
+                "category": "AutoJs6"
+            },
+            {
+                "command": "extension.remoteFiles.download",
+                "title": "下载 (Download)",
+                "category": "AutoJs6",
+                "icon": "$(cloud-download)"
+            },
+            {
+                "command": "extension.remoteFiles.copyPath",
+                "title": "复制路径 (Copy Path)",
+                "category": "AutoJs6"
             }
         ],
         "menus": {
@@ -173,12 +269,12 @@
                 {
                     "command": "extension.runWithoutArguments",
                     "group": "navigation@63",
-                    "when": "resourceLangId == javascript"
+                    "when": "resourceLangId == javascript || resourceLangId == typescript"
                 },
                 {
                     "command": "extension.stop",
                     "group": "navigation@66",
-                    "when": "resourceLangId == javascript"
+                    "when": "resourceLangId == javascript || resourceLangId == typescript"
                 },
                 {
                     "command": "extension.stopAll",
@@ -205,37 +301,37 @@
                 {
                     "command": "extension.run",
                     "group": "navigation@60",
-                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                    "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(js|mjs|cjs|ts|auto)$/"
                 },
                 {
                     "command": "extension.runOnDevice",
                     "group": "navigation@63",
-                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                    "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(js|mjs|cjs|ts|auto)$/"
                 },
                 {
                     "command": "extension.stop",
                     "group": "navigation@69",
-                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                    "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(js|mjs|cjs|ts|auto)$/"
                 },
                 {
                     "command": "extension.stopAll",
                     "group": "navigation@72",
-                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                    "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(js|mjs|cjs|ts|auto)$/"
                 },
                 {
                     "command": "extension.rerun",
                     "group": "navigation@75",
-                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                    "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(js|mjs|cjs|ts|auto)$/"
                 },
                 {
                     "command": "extension.saveToDevice",
                     "group": "navigation@78",
-                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                    "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(js|mjs|cjs|ts|auto)$/"
                 },
                 {
                     "command": "extension.save",
                     "group": "navigation@81",
-                    "when": "!explorerResourceIsFolder && resourceExtname == .js"
+                    "when": "!explorerResourceIsFolder && resourceExtname =~ /\\.(js|mjs|cjs|ts|auto)$/"
                 },
                 {
                     "command": "extension.runProject",
@@ -245,6 +341,11 @@
                 {
                     "command": "extension.saveProject",
                     "group": "navigation@87",
+                    "when": "explorerResourceIsFolder"
+                },
+                {
+                    "command": "extension.resyncProject",
+                    "group": "navigation@88",
                     "when": "explorerResourceIsFolder"
                 },
                 {
@@ -265,6 +366,182 @@
                 {
                     "command": "extension.saveProjectWithoutArguments",
                     "when": "false"
+                },
+                {
+                    "command": "extension.remoteFiles.refresh",
+                    "when": "false"
+                },
+                {
+                    "command": "extension.remoteFiles.open",
+                    "when": "false"
+                },
+                {
+                    "command": "extension.remoteFiles.run",
+                    "when": "false"
+                },
+                {
+                    "command": "extension.remoteFiles.delete",
+                    "when": "false"
+                },
+                {
+                    "command": "extension.remoteFiles.rename",
+                    "when": "false"
+                },
+                {
+                    "command": "extension.remoteFiles.newFolder",
+                    "when": "false"
+                },
+                {
+                    "command": "extension.remoteFiles.newFile",
+                    "when": "false"
+                },
+                {
+                    "command": "extension.remoteFiles.uploadCurrentFile",
+                    "when": "false"
+                },
+                {
+                    "command": "extension.remoteFiles.uploadFiles",
+                    "when": "false"
+                },
+                {
+                    "command": "extension.remoteFiles.download",
+                    "when": "false"
+                },
+                {
+                    "command": "extension.remoteFiles.copyPath",
+                    "when": "false"
+                },
+                {
+                    "command": "extension.disconnectDevice",
+                    "when": "autojs6.connected"
+                },
+                {
+                    "command": "extension.cancelReconnect",
+                    "when": "autojs6.reconnecting"
+                }
+            ],
+            "view/title": [
+                {
+                    "command": "extension.connect",
+                    "when": "view == autojs6.devices",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "extension.remoteFiles.refresh",
+                    "when": "view == autojs6.deviceFiles",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "extension.remoteFiles.browse",
+                    "when": "view == autojs6.deviceFiles",
+                    "group": "1_actions@1"
+                },
+                {
+                    "command": "extension.disconnectAll",
+                    "when": "view == autojs6.devices",
+                    "group": "1_actions@1"
+                },
+                {
+                    "command": "extension.reconnect",
+                    "when": "view == autojs6.devices",
+                    "group": "1_actions@2"
+                },
+                {
+                    "command": "extension.cancelReconnect",
+                    "when": "view == autojs6.devices && autojs6.reconnecting",
+                    "group": "1_actions@3"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "extension.disconnectDevice",
+                    "when": "view == autojs6.devices && viewItem =~ /^device/",
+                    "group": "inline"
+                },
+                {
+                    "command": "extension.remoteFiles.refresh",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(device|root|directory)$/",
+                    "group": "inline@9"
+                },
+                {
+                    "command": "extension.remoteFiles.newFolder",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(root|directory)$/",
+                    "group": "inline@1"
+                },
+                {
+                    "command": "extension.remoteFiles.newFile",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(root|directory)$/",
+                    "group": "inline@2"
+                },
+                {
+                    "command": "extension.remoteFiles.uploadCurrentFile",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(root|directory)$/",
+                    "group": "inline@3"
+                },
+                {
+                    "command": "extension.remoteFiles.run",
+                    "when": "view == autojs6.deviceFiles && viewItem == fs.script",
+                    "group": "inline@1"
+                },
+                {
+                    "command": "extension.remoteFiles.download",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(file|script)$/",
+                    "group": "inline@2"
+                },
+                {
+                    "command": "extension.remoteFiles.delete",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(file|script|directory)$/",
+                    "group": "inline@8"
+                },
+                {
+                    "command": "extension.remoteFiles.run",
+                    "when": "view == autojs6.deviceFiles && viewItem == fs.script",
+                    "group": "1_run@1"
+                },
+                {
+                    "command": "extension.remoteFiles.open",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(file|script)$/",
+                    "group": "1_run@2"
+                },
+                {
+                    "command": "extension.remoteFiles.newFolder",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(root|directory)$/",
+                    "group": "2_new@1"
+                },
+                {
+                    "command": "extension.remoteFiles.newFile",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(root|directory)$/",
+                    "group": "2_new@2"
+                },
+                {
+                    "command": "extension.remoteFiles.uploadCurrentFile",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(root|directory)$/",
+                    "group": "3_transfer@1"
+                },
+                {
+                    "command": "extension.remoteFiles.uploadFiles",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(root|directory)$/",
+                    "group": "3_transfer@2"
+                },
+                {
+                    "command": "extension.remoteFiles.download",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(file|script)$/",
+                    "group": "3_transfer@3"
+                },
+                {
+                    "command": "extension.remoteFiles.rename",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(file|script|directory)$/",
+                    "group": "4_modify@1"
+                },
+                {
+                    "command": "extension.remoteFiles.delete",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(file|script|directory)$/",
+                    "group": "4_modify@2"
+                },
+                {
+                    "command": "extension.remoteFiles.copyPath",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\./",
+                    "group": "5_misc@1"
                 }
             ]
         },
@@ -279,12 +556,6 @@
                 "command": "extension.run",
                 "key": "f6",
                 "mac": "f6",
-                "when": "editorTextFocus"
-            },
-            {
-                "command": "extension.commandsHierarchy",
-                "key": "f8",
-                "mac": "f8",
                 "when": "editorTextFocus"
             },
             {
@@ -334,34 +605,185 @@
                 "key": "ctrl+alt+6 s",
                 "mac": "ctrl+cmd+6 s",
                 "when": "editorTextFocus"
+            },
+            {
+                "command": "extension.showQrCode",
+                "key": "ctrl+alt+6 q",
+                "mac": "ctrl+cmd+6 q",
+                "when": "editorTextFocus"
             }
-        ]
+        ],
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "autojs6",
+                    "title": "AutoJs6",
+                    "icon": "assets/icons/autojs6.svg"
+                }
+            ]
+        },
+        "views": {
+            "autojs6": [
+                {
+                    "id": "autojs6.devices",
+                    "name": "设备 (Devices)",
+                    "contextualTitle": "AutoJs6 设备"
+                },
+                {
+                    "id": "autojs6.deviceFiles",
+                    "name": "设备文件 (Device Files)",
+                    "contextualTitle": "AutoJs6 设备文件"
+                }
+            ]
+        },
+        "viewsWelcome": [
+            {
+                "view": "autojs6.devices",
+                "contents": "尚未连接任何 AutoJs6 设备.\n[建立设备连接 (Connect)](command:extension.connect)\n[显示连接二维码 (QR Code)](command:extension.showQrCode)\n\n在 AutoJs6 侧拉菜单中开启 \"客户端模式\" 或 \"服务端模式\" 后建立连接."
+            },
+            {
+                "view": "autojs6.deviceFiles",
+                "contents": "连接设备后可在此浏览设备文件 (需 AutoJs6 6.8.0 及以上版本).\n[建立设备连接 (Connect)](command:extension.connect)",
+                "when": "!autojs6.connected"
+            }
+        ],
+        "configuration": {
+            "title": "AutoJs6",
+            "properties": {
+                "autojs6.server.port": {
+                    "type": "number",
+                    "default": 6347,
+                    "description": "插件监听端口, 供 AutoJs6 \"客户端模式\" 连接 (需与防火墙放行端口一致). Port the extension listens on for AutoJs6 client mode.",
+                    "minimum": 1,
+                    "maximum": 65535
+                },
+                "autojs6.client.port": {
+                    "type": "number",
+                    "default": 7347,
+                    "description": "AutoJs6 \"服务端模式\" 的默认端口 (局域网或 ADB 转发). Default port of AutoJs6 server mode.",
+                    "minimum": 1,
+                    "maximum": 65535
+                },
+                "autojs6.http.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "启用本地 HTTP 命令服务 (如 http://127.0.0.1:10347/exec?cmd=run&path=...), 供外部工具触发命令. Enable the local HTTP command bridge."
+                },
+                "autojs6.http.host": {
+                    "type": "string",
+                    "default": "127.0.0.1",
+                    "description": "HTTP 命令服务监听地址. 默认仅本机可访问, 设为 0.0.0.0 可允许局域网访问 (存在被其他主机触发命令的风险). Bind address of the HTTP command bridge."
+                },
+                "autojs6.http.port": {
+                    "type": "number",
+                    "default": 10347,
+                    "description": "HTTP 命令服务端口. Port of the HTTP command bridge.",
+                    "minimum": 1,
+                    "maximum": 65535
+                },
+                "autojs6.adb.path": {
+                    "type": "string",
+                    "default": "",
+                    "description": "adb 可执行文件路径或其所在目录. 留空时依次尝试 PATH, ANDROID_HOME, ANDROID_SDK_ROOT 及常见安装目录 (Windows 下最后回退到插件内置 adb). Path to the adb executable or its directory."
+                },
+                "autojs6.connection.connectTimeout": {
+                    "type": "number",
+                    "default": 8000,
+                    "description": "主动连接 AutoJs6 服务端的 TCP 连接超时 (毫秒). TCP connect timeout in milliseconds.",
+                    "minimum": 1000
+                },
+                "autojs6.connection.handshakeTimeout": {
+                    "type": "number",
+                    "default": 6000,
+                    "description": "握手超时 (毫秒). Handshake timeout in milliseconds.",
+                    "minimum": 1000
+                },
+                "autojs6.connection.heartbeatInterval": {
+                    "type": "number",
+                    "default": 15000,
+                    "description": "心跳间隔 (毫秒), 0 表示禁用. 仅对支持协议 v2 的 AutoJs6 (6.8.0+) 生效. Heartbeat interval in milliseconds, 0 to disable.",
+                    "minimum": 0
+                },
+                "autojs6.connection.heartbeatTimeout": {
+                    "type": "number",
+                    "default": 10000,
+                    "description": "心跳超时 (毫秒), 超时未收到响应则判定连接断开. Heartbeat timeout in milliseconds.",
+                    "minimum": 1000
+                },
+                "autojs6.connection.autoReconnect": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "插件主动连接 (客户端模式 LAN / ADB) 意外断开后自动重连. Reconnect automatically after an unexpected disconnect."
+                },
+                "autojs6.connection.maxReconnectAttempts": {
+                    "type": "number",
+                    "default": 0,
+                    "description": "单次自动重连的最大尝试次数, 0 表示仅受 reconnectTimeout 时间窗口限制. Max reconnect attempts per session, 0 = limited only by reconnectTimeout.",
+                    "minimum": 0
+                },
+                "autojs6.connection.reconnectTimeout": {
+                    "type": "number",
+                    "default": 300,
+                    "description": "单次自动重连的总时长上限 (秒), 超过后停止重试并提示; 0 表示不限. Total reconnect window in seconds, 0 = unlimited.",
+                    "minimum": 0
+                },
+                "autojs6.connection.reconnectMaxDelay": {
+                    "type": "number",
+                    "default": 10000,
+                    "description": "自动重连的最大间隔 (毫秒), 间隔从 1 秒起指数递增至该值. Upper bound of the reconnect backoff delay in milliseconds.",
+                    "minimum": 1000
+                },
+                "autojs6.connection.restoreOnStartup": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "VSCode 启动时自动恢复上次由插件主动建立的连接 (客户端模式 LAN / ADB); 在 VSCode 或 AutoJs6 侧显式断开的设备不会恢复. Reconnect on startup to the targets that were connected when VSCode closed."
+                },
+                "autojs6.log.showChannelOnConnect": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "设备接入时自动显示其日志输出面板. Show the device output channel on connect."
+                },
+                "autojs6.log.disposeChannelOnDisconnect": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "设备断开时移除其日志输出面板 (默认保留日志并标记断开). Dispose the device output channel on disconnect."
+                },
+                "autojs6.log.debug": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "在 \"AutoJs6 VSCode Extension Debug\" 输出面板记录详细调试日志. Write verbose debug logs."
+                },
+                "autojs6.save.keepRelativePath": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "保存/运行文件时携带相对工作区的路径, AutoJs6 6.8.0+ 将按目录结构保存到工作目录 (issue #37). Keep the workspace-relative path when saving to device."
+                }
+            }
+        }
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
-        "compile": "tsc --allowJs false --typeRoots null -p ./",
-        "watch": "tsc --allowJs false --typeRoots null -watch -p ./",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "test": "npm run compile && node --test \"out/test/**/*.test.js\"",
         "package": "vsce package",
         "publish": "vsce publish"
     },
     "devDependencies": {
         "@sm003/autojs6-dts": "^2.0.0",
         "@types/archiver": "^3.0.0",
-        "@types/mocha": "^2.2.42",
-        "@types/node": "^12.20.37",
+        "@types/node": "^18.19.130",
+        "@types/qrcode": "^1.5.6",
         "@types/stream-buffers": "^3.0.2",
-        "@types/vscode": "^1.1.37",
-        "@vscode/test-electron": "^1.6.2",
+        "@types/vscode": "^1.75.1",
         "typescript": "^5.3.3",
         "vsce": "^2.15.0"
     },
     "dependencies": {
         "archiver": "^3.0.0",
-        "iconv-lite": "^0.6.3",
+        "pinyin": "^2.11.0",
+        "qrcode": "^1.5.4",
         "stream-buffers": "^3.0.2",
-        "websocket": "^1.0.34",
-        "systeminformation": "^5.23.12",
-        "pinyin": "^2.11.0"
-    },
-    "__npminstall_done": false
+        "systeminformation": "^5.23.12"
+    }
 }

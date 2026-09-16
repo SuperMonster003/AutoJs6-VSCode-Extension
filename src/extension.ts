@@ -1,1499 +1,1053 @@
 'use strict';
 
+import * as fs from 'fs';
+import * as http from 'http';
 import * as net from 'net';
-import { AddressInfo } from 'net';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { Disposable, Memento, OutputChannel, QuickInputButton, TextEditor, ThemeIcon, Uri } from 'vscode';
-import * as fs from 'fs';
-import * as util from './util';
-import * as querystring from 'querystring';
-
-import i18n from './i18n';
+import { Memento, TextEditor, Uri } from 'vscode';
 import * as pinyin from 'pinyin';
 
-import { Adb } from './adb';
-import { awaiter } from './awaiter';
-import { Device, DeviceInfo, Devices, HTTP_SERVER_PORT, LogData } from './device';
-import { Project, ProjectTemplate } from './project';
-import { SpawnSyncReturns } from 'child_process';
-import * as http from 'http';
-import * as url from 'url';
-import EventEmitter = require('events');
+import * as util from './util';
+import { Adb, AdbDeviceInfo, AdbNotFoundError } from './adb';
+import { CLOSE_REASON, ConnectionTarget, ConnectionType, describeTarget, Device, DeviceCommandParam, DeviceError, Devices, ProjectCommand, ReconnectSession, targetKey } from './device';
+import { DeviceChannels, initLogger, logDebug, logError } from './logger';
+import { Project, ProjectTemplate, resolveProjectDir } from './project';
+import { parseEndpoint, toPosixPath } from './protocol';
+import { QrCodePanel } from './qrcode';
+import { DeviceFilesTreeProvider, DevicesTreeProvider, REMOTE_SCHEME, RemoteFileCommands, RemoteFileSystemProvider } from './remoteFs';
+import { Settings } from './settings';
+import { confirm, pickNetworkInterface, showErrorWithAction, showMultiPick, showPick } from './ui';
 
-let extension: Extension = null;
-
-export let connectedServerAdb: Set<string> = new Set();
-export let connectedServerLan: Set<string> = new Set();
-
-export let extensionDebugChannel: OutputChannel = null;
-
-const deviceChannel: { [prop: string]: OutputChannel } = {};
-
+const EXTENSION_NAME = 'AutoJs6 VSCode Extension';
 const IP_LOOP_BACK = '127.0.0.1';
 const IP_UNIVERSAL = '0.0.0.0';
-const EXTENSION_NAME = 'AutoJs6 VSCode Extension';
+const STORAGE_KEY_RECORDS = 'autojs6.devices';
+const STORAGE_KEY_TARGETS = 'autojs6.lastTargets';
+const STORAGE_IP_BLACKLIST = [ IP_LOOP_BACK, IP_UNIVERSAL ];
 
-const PLACEHOLDER_INPUT_OR_SELECT_A_WAY_TO_CONNECT = '输入或选择连接建立方式';
-const PLACEHOLDER_INPUT_OR_SELECT_A_NETWORK_INTERFACE = '输入或选择一个网络接口';
-const PLACEHOLDER_FETCHING_DETAILS_IN_BACKGROUND = '正在后台获取详细信息';
+const PREFIX = {
+    connect: '[ 连接 ]',
+    clear: '[ 清理 ]',
+    record: '[ 记录 ]',
+    optional: '[ 可选 ]',
+};
 
-const STRING_YES = '是 (Yes)';
-const STRING_NO = '否 (No)';
+const LABEL = {
+    ajClientLan: `${PREFIX.connect} - 服务端模式 (Server) | 局域网 (LAN)`,
+    ajClientQr: `${PREFIX.connect} - 服务端模式 (Server) | 二维码 (QR Code)`,
+    ajServerLan: `${PREFIX.connect} - 客户端模式 (Client) | 局域网 (LAN)`,
+    ajServerAdb: `${PREFIX.connect} - 客户端模式 (Client) | 安卓调试桥 (ADB)`,
+    recordClear: `${PREFIX.clear} - IP 地址记录 (IP Address Records)`,
+};
 
-export enum ConnectionType {
-    CLIENT_LAN = 0,
-    SERVER_LAN = 1,
-    SERVER_ADB = 2,
+/** Commands the device may ask the extension to run. zh-CN: 设备可请求插件执行的命令白名单. */
+const DEVICE_TRIGGERABLE_COMMANDS = new Set([
+    'viewDocument', 'connect', 'disconnectAll', 'run', 'runOnDevice', 'stop', 'stopAll', 'rerun',
+    'save', 'saveToDevice', 'newUntitledFile', 'newProject', 'runProject', 'saveProject', 'showQrCode',
+]);
+
+interface IpRecord {
+    ip: string;
+    ts: number;
 }
 
-const storageIpAddressBlacklist = [ IP_LOOP_BACK, IP_UNIVERSAL ];
-const regexIpAddress = /^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}(:\d+)?$/;
-
-const pickButtons: {
-    close: QuickInputButton;
-} = {
-    close: {
-        iconPath: new ThemeIcon('close'),
-        tooltip: i18n.close,
-    },
-};
-
-const picker = {
-    operations: {
-        connect: '连接',
-        clear: '清理',
-        record: '记录',
-        optional: '可选',
-        removeOperation(s: string) {
-            const regexPrefixOperation = /^\[ [\u4e00-\u9fff]+ ] - /;
-            return s.replace(regexPrefixOperation, '');
-        },
-    },
-    commands: {
-        empty: '',
-        server: '服务端模式 (Server)',
-        client: '客户端模式 (Client)',
-        record: 'IP 地址记录 (IP Address Records)',
-    },
-    agents: {
-        lan: '局域网 (LAN)',
-        adb: '安卓调试桥 (ADB)',
-        qr: '二维码 (QR Code)',
-    },
-};
-
-const commandsHierarchyPreset = {
-    desc: {
-        script: { zh: '脚本', en: 'Script' },
-        project: { zh: '项目', en: 'Project' },
-        file: { zh: '文件', en: 'File' },
-        currentTask: { zh: '当前任务', en: 'Current Task' },
-        allTasks: { zh: '全部任务', en: 'All Tasks' },
-        viewWithVscBrowser: { zh: '使用 VSCode 内置浏览器', en: 'With VSCode Browser' },
-        viewWithSysBrowser: { zh: '使用操作系统默认浏览器', en: 'With System Browser' },
-    },
-};
-
-type CommandsHierarchy = {
-    instruction: number | string;
-    desc: string | { zh: string, en?: string };
-    subs?: CommandsHierarchy[];
-    action?(): void;
+/** A connection the extension initiated, persisted so it can be restored on startup. zh-CN: 插件主动建立的连接, 持久化以便启动时恢复. */
+interface SavedTarget {
+    type: ConnectionType;
+    host: string;
+    port: number;
+    adbDeviceId?: string;
+    label?: string;
+    ts: number;
 }
 
-const commandsHierarchy: CommandsHierarchy[] = [ {
-    instruction: 1,
-    desc: { zh: '连接', en: 'Connect' },
-    subs: [ {
-        instruction: 1,
-        desc: { zh: '建立连接', en: 'Establish' },
-        subs: [ {
-            instruction: 1,
-            desc: `${picker.commands.server} | ${picker.agents.lan}`,
-            action() {
+interface ScriptPayload {
+    id: string;
+    name: string;
+    path?: string;
+    script: string;
+}
 
-            },
-        }, {
-            instruction: 2,
-            desc: `${picker.commands.server} | ${picker.agents.qr}`,
-            action() {
+/**
+ * Local HTTP bridge so external tools can trigger commands, e.g. `http://127.0.0.1:10347/exec?cmd=run&path=...` (issue #6).
+ * zh-CN: 本地 HTTP 命令桥, 供外部工具触发命令 (issue #6).
+ */
+class CommandHttpServer implements vscode.Disposable {
 
-            },
-        }, {
-            instruction: 4,
-            desc: `${picker.commands.client} | ${picker.agents.lan}`,
-            action() {
+    private server: http.Server | null = null;
 
-            },
-        }, {
-            instruction: 5,
-            desc: `${picker.commands.client} | ${picker.agents.adb}`,
-            action() {
+    constructor(private readonly onCommand: (cmd: string, path?: string) => void) {
+    }
 
-            },
-        } ],
-    }, {
-        instruction: 0,
-        desc: { zh: '断开连接', en: 'Disconnect' },
-        subs: [ {
-            instruction: 1,
-            desc: { zh: '全部设备', en: 'All Devices' },
-            action() {
-
-            },
-        }, {
-            instruction: 2,
-            desc: { zh: '指定设备', en: 'Specified Devices' },
-            action() {
-
-            },
-        } ],
-    } ],
-}, {
-    instruction: 6,
-    desc: { zh: '运行', en: 'Run' },
-    subs: [ {
-        instruction: 1,
-        desc: commandsHierarchyPreset.desc.script,
-        subs: [ {
-            instruction: 1,
-            desc: { zh: '全部设备', en: 'All Devices' },
-            action() {
-
-            },
-        }, {
-            instruction: 2,
-            desc: { zh: '指定设备', en: 'Specified Devices' },
-            action() {
-
-            },
-        } ],
-    }, {
-        instruction: 2,
-        desc: commandsHierarchyPreset.desc.project,
-        subs: [ {
-            instruction: 1,
-            desc: { zh: '全部设备', en: 'All Devices' },
-            action() {
-
-            },
-        }, {
-            instruction: 2,
-            desc: { zh: '指定设备', en: 'Specified Devices' },
-            action() {
-
-            },
-        } ],
-    } ],
-}, {
-    instruction: 5,
-    desc: { zh: '保存', en: 'Save' },
-    subs: [ {
-        instruction: 1,
-        desc: commandsHierarchyPreset.desc.script,
-        subs: [ {
-            instruction: 1,
-            desc: { zh: '全部设备', en: 'All Devices' },
-            action() {
-
-            },
-        }, {
-            instruction: 2,
-            desc: { zh: '指定设备', en: 'Specified Devices' },
-            action() {
-
-            },
-        } ],
-    }, {
-        instruction: 2,
-        desc: commandsHierarchyPreset.desc.project,
-        subs: [ {
-            instruction: 1,
-            desc: { zh: '全部设备', en: 'All Devices' },
-            action() {
-
-            },
-        }, {
-            instruction: 2,
-            desc: { zh: '指定设备', en: 'Specified Devices' },
-            action() {
-
-            },
-        } ],
-    } ],
-}, {
-    instruction: 0,
-    desc: { zh: '停止', en: 'Stop' },
-    subs: [ {
-        instruction: 1,
-        desc: commandsHierarchyPreset.desc.currentTask,
-        subs: [ {
-            instruction: 1,
-            desc: { zh: '全部设备', en: 'All Devices' },
-            action() {
-
-            },
-        }, {
-            instruction: 2,
-            desc: { zh: '指定设备', en: 'Specified Devices' },
-            action() {
-
-            },
-        } ],
-    }, {
-        instruction: 2,
-        desc: commandsHierarchyPreset.desc.allTasks,
-        subs: [ {
-            instruction: 1,
-            desc: { zh: '全部设备', en: 'All Devices' },
-            action() {
-
-            },
-        }, {
-            instruction: 2,
-            desc: { zh: '指定设备', en: 'Specified Devices' },
-            action() {
-
-            },
-        } ],
-    } ],
-}, {
-    instruction: 2,
-    desc: { zh: '新建', en: 'New' },
-    subs: [ {
-        instruction: 1,
-        desc: commandsHierarchyPreset.desc.file,
-        action() {
-
-        },
-    }, {
-        instruction: 2,
-        desc: commandsHierarchyPreset.desc.project,
-        action() {
-
-        },
-    } ],
-}, {
-    instruction: 3,
-    desc: { zh: '扩展', en: 'Extension' },
-    subs: [ {
-        instruction: 1,
-        desc: { zh: '查看在线文档', en: 'View Online Document' },
-        subs: [ {
-            instruction: 1,
-            desc: commandsHierarchyPreset.desc.viewWithVscBrowser,
-            action() {
-
-            },
-        }, {
-            instruction: 2,
-            desc: commandsHierarchyPreset.desc.viewWithSysBrowser,
-            action() {
-
-            },
-        } ],
-    } ],
-}, {
-    instruction: '?',
-    desc: { zh: '查看全部命令层级', en: 'View All Commands Hierarchy' },
-    action() {
-
-    },
-} ];
-
-// @Reference to AutoX by SuperMonster003 on Jun 11, 2023.
-class AJHttpServer extends EventEmitter {
-    public isHttpServerStarted = false;
-    public port: number;
-
-    private httpServer: http.Server;
-
-    constructor(port: number) {
-        super();
-        this.port = port;
-        this.httpServer = http.createServer((request, response) => {
-            logDebug('Received request for ' + request.url);
-
-            let urlObj = url.parse(request.url);
-            let queryObjRaw = urlObj.query;
-            let queryObj = querystring.parse(queryObjRaw);
-
-            // let urlObj = new url.URL(request.url);
-            // let queryObjRaw = urlObj.searchParams;
-            // let queryObj: {[prop in keyof AJHttpServerParamList]: string} = {
-            //     cmd: queryObjRaw.get('cmd'),
-            //     path: queryObjRaw.get('path'),
-            // };
-
-            logDebug(queryObj);
-            logDebug(urlObj.pathname);
-
-            if (urlObj.pathname == '/exec') {
-                response.writeHead(200);
-                response.end('this command is:' + queryObj.cmd + '-->' + queryObj.path);
-                this.emit('cmd', queryObj.cmd, queryObj.path);
-                logDebug(queryObj.cmd, queryObj.path);
-            } else {
-                response.writeHead(404);
-                response.end();
-            }
+    start(host: string, port: number): Promise<void> {
+        this.stop();
+        return new Promise((resolve, reject) => {
+            const server = http.createServer((request, response) => {
+                const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+                if (url.pathname !== '/exec') {
+                    response.writeHead(404);
+                    response.end();
+                    return;
+                }
+                const cmd = url.searchParams.get('cmd') || '';
+                const filePath = url.searchParams.get('path') || undefined;
+                response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+                response.end(`command: ${cmd}${filePath ? ` --> ${filePath}` : ''}`);
+                this.onCommand(cmd, filePath);
+            });
+            server.on('error', (e: NodeJS.ErrnoException) => {
+                logError('HTTP server error:', e);
+                if (this.server !== server) reject(e);
+            });
+            server.listen(port, host, () => {
+                this.server = server;
+                logDebug(`HTTP server listening on ${host}:${port}`);
+                resolve();
+            });
         });
-        this.httpServer.listen(port, '0.0.0.0', () => {
-            this.isHttpServerStarted = true;
-            const address: any = this.httpServer.address();
-            // var localAddress = this.getIPAddress();
-            logDebug(`server listening on port ${address.port}`);
-            this.emit('connect');
-        });
+    }
+
+    stop() {
+        this.server?.close();
+        this.server = null;
+    }
+
+    dispose() {
+        this.stop();
     }
 }
 
-export class Extension {
-    private readonly context: vscode.ExtensionContext;
-    private readonly storageKey: string = 'autojs6.devices';
-    private readonly picks = {
-        ajClientLan: this.newPicker('connect', 'server', 'lan', 'AutoJs6 作为客户端连接至 VSCode 服务端 (使用 IP 地址)'),
-        ajClientQr: this.newPicker('connect', 'server', 'lan', 'AutoJs6 作为客户端连接至 VSCode 服务端 (使用 二维码)'),
-        ajServerLan: this.newPicker('connect', 'client', 'lan', 'VSCode 作为客户端连接至 AutoJs6 服务端 (使用 IP 地址)'),
-        ajServerAdb: this.newPicker('connect', 'client', 'adb', 'VSCode 作为客户端连接至 AutoJs6 服务端 (使用 ADB)'),
-        recordClear: this.newPicker('clear', 'record', null, '清除保存在本地的全部客户端 IP 地址记录'),
-        recordPrefix: this.newPicker('record', 'empty', null, 'VSCode 作为客户端使用 IP 地址 %s 连接至 AutoJs6 服务端'),
-    };
+export class Extension implements vscode.Disposable {
+
     static readonly commands: Array<keyof Extension> = [
-        'viewDocument', 'connect', 'disconnectAll', 'run', 'runWithoutArguments',
-        'runOnDevice', 'stop', 'stopAll', 'rerun', 'save', 'saveToDevice',
-        'newUntitledFile', 'newProject', 'runProject', 'runProjectWithoutArguments',
-        'saveProject', 'saveProjectWithoutArguments', 'commandsHierarchy',
+        'viewDocument', 'connect', 'disconnectAll', 'disconnectDevice', 'selectDevice', 'showQrCode',
+        'run', 'runWithoutArguments', 'runOnDevice', 'stop', 'stopAll', 'rerun',
+        'save', 'saveToDevice', 'newUntitledFile', 'newProject',
+        'runProject', 'runProjectWithoutArguments', 'saveProject', 'saveProjectWithoutArguments', 'resyncProject',
+        'reconnect', 'cancelReconnect',
     ];
 
-    private adb: Adb;
-    private client: Devices;
-    private storage: Memento;
-    private lastActiveEditor: TextEditor;
+    readonly devices = new Devices(() => Settings.connectionOptions);
+    private readonly adb: Adb;
+    private readonly storage: Memento;
+    private readonly channels = new DeviceChannels(name => vscode.window.createOutputChannel(name), () => Settings.disposeChannelOnDisconnect);
+    private readonly httpServer: CommandHttpServer;
+    private readonly statusBar: vscode.StatusBarItem;
+    private readonly disposables: vscode.Disposable[] = [];
+    private lastActiveEditor: TextEditor | undefined;
+    private project: Project | null = null;
+    private readonly adbForwards = new Map<string, number[]>();
 
-    constructor(context: vscode.ExtensionContext, extensionScope: any) {
-        this.context = context;
-        this.storage = this.getWrappedGlobalState();
+    constructor(private readonly context: vscode.ExtensionContext) {
+        this.storage = context.globalState;
+        this.adb = new Adb(path.join(context.extensionPath, 'tools'), () => Settings.adbPath);
+        this.httpServer = new CommandHttpServer((cmd, p) => this.onHttpCommand(cmd, p));
+        this.statusBar = vscode.window.createStatusBarItem('autojs6.devices', vscode.StatusBarAlignment.Left, 100);
+        this.statusBar.name = 'AutoJs6 Devices';
+        this.statusBar.command = 'extension.selectDevice';
 
         this.initActiveEditor();
-        this.initAdb(context.extensionPath, 'tools');
-        this.initClient();
+        this.initDevices();
         this.registerCommands();
+        this.initViews();
+        this.updateStatusBar();
 
-        extensionScope.deactivate = this.disconnectAll.bind(this);
+        this.disposables.push(this.channels, this.httpServer, this.statusBar);
+        this.disposables.push(Settings.onDidChange(() => this.onSettingsChanged()));
+
+        this.startServers();
+        this.restoreConnections();
     }
 
-    private connectToLocalHint() {
-        const basicNI = util.getBasicNetworkInterfaces();
-        if (basicNI.length === 0) {
-            vscode.window.showErrorMessage('未找到可用的局域网 IP 地址');
-            return;
-        }
-        this.showQuickPickForAvailableNetworkInterfaces(basicNI).then((ip) => {
-            if (ip !== undefined) {
-                vscode.window.showInformationMessage(`在 AutoJs6 侧拉菜单开启客户端模式并连接至 ${ip}`);
-            }
+    /* Lifecycle. zh-CN: 生命周期. */
+
+    private startServers() {
+        const port = Settings.serverPort;
+        this.devices.startServer(port).then(() => this.updateStatusBar()).catch((e: NodeJS.ErrnoException) => {
+            const hint = e.code === 'EADDRINUSE'
+                ? `端口 ${port} 已被占用 (可能是另一个 VSCode 窗口). 客户端模式 (AutoJs6 主动连接) 在本窗口不可用, 其他连接方式仍可使用.`
+                : `无法监听端口 ${port}: ${e.message}`;
+            showErrorWithAction(`AutoJs6: ${hint}`, '修改端口', () => vscode.commands.executeCommand('workbench.action.openSettings', 'autojs6.server.port'));
+            this.updateStatusBar();
         });
-    }
-
-    private static showLocalQrCode() {
-
-    }
-
-    private newPicker(operation: string, command: string, agent: string, detail: string): vscode.QuickPickItem {
-        let label = `[ ${picker.operations[operation]} ]`;
-
-        if (typeof command === 'string') {
-            label += ` - ${picker.commands[command]}`;
-        }
-
-        if (typeof agent === 'string') {
-            label += ` | ${picker.agents[agent]}`;
-        }
-
-        return { label, detail };
-    }
-
-    private runFile(url?: string) {
-        this.runFileOn(this.client.devices, url);
-    }
-
-    private runFileOn(devices: Device[], url?: string) {
-        if (devices.length === 0) {
-            vscode.window.showErrorMessage('未发现已连接的设备');
-            return;
-        }
-        logDebug('url = ' + url);
-        if (url == null) {
-            let editor = this.lastActiveEditor;
-            if (!editor) {
-                vscode.window.showErrorMessage('需在正在编辑的文件窗口中使用运行命令');
-                return;
-            }
-            devices.forEach((device) => {
-                device.sendCommand('run', {
-                    id: editor.document.fileName,
-                    name: this.getEditorFileName(editor),
-                    script: editor.document.getText(),
-                });
+        if (Settings.httpEnabled) {
+            this.httpServer.start(Settings.httpHost, Settings.httpPort).catch((e: NodeJS.ErrnoException) => {
+                logError(`HTTP command server unavailable on ${Settings.httpHost}:${Settings.httpPort}:`, e);
             });
-            return;
-        }
-        try {
-            let fileName = Uri.parse(url).fsPath;
-            let script = fs.readFileSync(fileName, 'utf8');
-            devices.forEach((device) => {
-                device.sendCommand('run', {
-                    id: fileName,
-                    name: fileName,
-                    script: script,
-                });
-            });
-        } catch (error) {
-            logDebug(error);
         }
     }
 
-    private getEditorFileName(editor: vscode.TextEditor) {
-        let fileName = editor.document.fileName;
-        if (editor.document.isUntitled) {
-            // noinspection SpellCheckingInspection
-            switch (editor.document.languageId) {
-                case 'bat':
-                    return `${fileName}.bat`;
-                case 'c':
-                    return `${fileName}.c`;
-                case 'css':
-                    return `${fileName}.css`;
-                case 'go':
-                    return `${fileName}.go`;
-                case 'html':
-                    return `${fileName}.html`;
-                case 'java':
-                    return `${fileName}.java`;
-                case 'javascript':
-                    return `${fileName}.js`;
-                case 'javascriptreact':
-                    return `${fileName}.jsx`;
-                case 'json':
-                    return `${fileName}.json`;
-                case 'lua':
-                    return `${fileName}.lua`;
-                case 'markdown':
-                    return `${fileName}.md`;
-                case 'php':
-                    return `${fileName}.php`;
-                case 'plaintext':
-                    return `${fileName}.txt`;
-                case 'powershell':
-                    return `${fileName}.ps`;
-                case 'python':
-                    return `${fileName}.py`;
-                case 'r':
-                    return `${fileName}.r`;
-                case 'shellscript':
-                    return `${fileName}.sh`;
-                case 'sql':
-                    return `${fileName}.sql`;
-                case 'typescript':
-                    return `${fileName}.ts`;
-                case 'typescriptreact':
-                    return `${fileName}.tsx`;
-                case 'vue':
-                    return `${fileName}.vue`;
-                case 'xml':
-                    return `${fileName}.xml`;
-                case 'xsl':
-                    return `${fileName}.xsl`;
-                case 'yaml':
-                    return `${fileName}.yaml`;
-            }
+    private onSettingsChanged() {
+        this.adb.invalidate();
+        if (this.devices.listeningPort !== Settings.serverPort || (!Settings.httpEnabled)) {
+            this.httpServer.stop();
+            this.startServers();
         }
-        return fileName;
+        QrCodePanel.refresh(Settings.serverPort);
+    }
+
+    dispose() {
+        this.devices.dispose();
+        this.project?.dispose();
+        this.adbForwards.forEach((ports, deviceId) => ports.forEach(p => this.adb.removeForward(deviceId, p)));
+        this.disposables.forEach(d => d.dispose());
     }
 
     private initActiveEditor() {
         this.lastActiveEditor = vscode.window.activeTextEditor;
-        vscode.window.onDidChangeActiveTextEditor((editor) => {
+        this.disposables.push(vscode.window.onDidChangeActiveTextEditor((editor) => {
             if (editor && editor.document.uri.scheme !== 'output') {
                 this.lastActiveEditor = editor;
             }
+        }));
+    }
+
+    private initDevices() {
+        this.devices
+            .on('new_device', (device: Device) => this.onNewDevice(device))
+            .on('detach_device', (device: Device, reason: string) => this.onDetachDevice(device, reason))
+            .on('log', (device: Device, text: string) => this.channels.append(device.deviceId, text))
+            .on('command', (device: Device, param: DeviceCommandParam) => this.onDeviceCommand(device, param))
+            .on('reject', (device: Device, message: string) => {
+                showErrorWithAction(message, '查看所有项目版本', () => vscode.env.openExternal(Uri.parse('https://github.com/SuperMonster003/AutoJs6/releases/')));
+            })
+            .on('reconnecting', () => this.updateStatusBar())
+            .on('reconnected', (device: Device, session: ReconnectSession) => {
+                logDebug(`reconnected to ${device} after ${session.attempts} attempt(s)`);
+            })
+            .on('reconnect_failed', (target: ConnectionTarget, lastError: string, session: ReconnectSession) => this.onReconnectFailed(target, lastError, session))
+            .on('reconnect_cancelled', () => this.updateStatusBar())
+            .on('changed', () => this.updateStatusBar());
+    }
+
+    private onDetachDevice(device: Device, reason: string) {
+        const willReconnect = this.devices.shouldReconnect(device, reason);
+        const silent = reason === CLOSE_REASON.SHUTDOWN || reason === CLOSE_REASON.REPLACED;
+        if (!silent) {
+            const detail = reason && reason !== CLOSE_REASON.USER ? ` (${reason})` : '';
+            vscode.window.showInformationMessage(`AutoJs6 设备断开: ${device}${detail}${willReconnect ? ', 将自动重连' : ''}`);
+        }
+        this.channels.onDisconnect(device.deviceId, device.toString());
+        this.releaseAdbForward(device);
+        // An explicit disconnect on either side must not be restored later (respect the user's intent).
+        // zh-CN: 任一侧显式断开的连接不再恢复 (尊重用户意愿).
+        if (device.connectionTarget && (reason === CLOSE_REASON.USER || device.peerByeReason === 'user' || reason.includes('版本'))) {
+            this.forgetTarget(device.connectionTarget);
+        }
+        this.updateStatusBar();
+    }
+
+    private onReconnectFailed(target: ConnectionTarget, lastError: string, session: ReconnectSession) {
+        const name = describeTarget(target);
+        const retry = '重试';
+        const forget = '不再自动恢复';
+        vscode.window.showWarningMessage(`AutoJs6: 无法重新连接 ${name} (已尝试 ${session.attempts} 次, 最近错误: ${lastError || '未知'}), 已停止重试`, retry, forget).then((choice) => {
+            if (choice === retry) {
+                this.devices.startReconnect(target, '', true);
+            } else if (choice === forget) {
+                this.forgetTarget(target);
+            }
         });
+        this.updateStatusBar();
     }
 
-    private initAdb(...path: string[]) {
-        this.adb = new Adb(path.join(...path));
+    private onNewDevice(device: Device) {
+        this.rememberIp(device);
+        if (device.connectionTarget) {
+            this.rememberTarget(device.connectionTarget);
+        }
+        const channel = this.channels.getOrCreate(device.deviceId, device.toString());
+        channel.appendLine(`--- ${device} connected (AutoJs6 ${device.versionName}, protocol v${device.protocolVersion}) ---`);
+        if (Settings.showChannelOnConnect) {
+            channel.show(true);
+        }
+        vscode.window.showInformationMessage(`AutoJs6 设备接入: ${device}`);
+        this.updateStatusBar();
     }
 
-    private initClient() {
-        this.client = new Devices()
-            .on('new_device', (device: Device, type: number) => {
-                let newDeviceIp = device.connection.remoteAddress?.replace(/.*?:?((\d+\.){3}\d+$)/, '$1');
-                device.host = newDeviceIp;
-                logDebug('new device host', newDeviceIp);
+    private onDeviceCommand(device: Device, param: DeviceCommandParam) {
+        const cmd = param?.['\xa0cmd\xa0'];
+        if (!DEVICE_TRIGGERABLE_COMMANDS.has(cmd)) {
+            vscode.window.showErrorMessage(`接收到未知指令 "${cmd}" (来自 ${device})`);
+            return;
+        }
+        vscode.window.showInformationMessage(`执行来自 ${device} 的指令 "${cmd}"`);
+        vscode.commands.executeCommand(`extension.${cmd}`, param.path);
+    }
 
-                let storageDataRaw = this.storage.get(this.storageKey, []);
-                logDebug('storage data', storageDataRaw);
-                let isUpdated = false;
-
-                const prefixRecord = `[ ${picker.operations.record} ] - `;
-
-                for (let i = 0; i < storageDataRaw.length; i += 1) {
-                    let data = storageDataRaw[i];
-                    let [ ip ] = data.split('|');
-                    ip = ip.replace(prefixRecord, '');
-                    if (ip === newDeviceIp) {
-                        let newData = [ ip, Date.now() ].join('|');
-                        storageDataRaw.splice(i, 1);
-                        storageDataRaw.unshift(newData);
-                        this.storage.update(this.storageKey, storageDataRaw);
-
-                        isUpdated = true;
-
-                        /* No break, for removing duplication. */
-                        // break;
-                    }
-                }
-                if (!isUpdated) {
-                    if (!storageIpAddressBlacklist.includes(newDeviceIp)) {
-                        storageDataRaw.unshift([ newDeviceIp, Date.now() ].join('|'));
-                        this.storage.update(this.storageKey, storageDataRaw);
-                    }
-                }
-
-                let devChn = deviceChannel[device.deviceId];
-                if (!devChn) {
-                    devChn = vscode.window.createOutputChannel(`Channel for (${device})`);
-                    deviceChannel[device.deviceId] = devChn;
-                }
-                devChn.show(true);
-                vscode.window.showInformationMessage(`AutoJs6 设备接入: ${device}`);
-                if (type === ConnectionType.SERVER_ADB) {
-                    connectedServerAdb.add(device.adbDeviceId);
-                } else if (type === ConnectionType.SERVER_LAN) {
-                    connectedServerLan.add(device.host);
-                }
-                logDebug(connectedServerAdb);
-                logDebug(connectedServerLan);
-            })
-            .on('detach_device', (device: Device) => {
-                vscode.window.showInformationMessage(`AutoJs6 设备断开: ${device}`);
-                connectedServerAdb.delete(device.adbDeviceId);
-                connectedServerLan.delete(device.host);
-            })
-            .on('log', (data: LogData) => {
-                logDebug('## on log');
-                let channel = deviceChannel[data.device.deviceId];
-                if (channel) {
-                    channel.appendLine(data.log);
-                }
-                logDebug('## channel output: ' + data.log);
-            });
+    private onHttpCommand(cmd: string, filePath?: string) {
+        logDebug(`HTTP command: ${cmd} ${filePath || ''}`);
+        if (cmd === 'rerunProject') {
+            this.stopAll();
+            setTimeout(() => this.runProject(filePath), 1000);
+            return;
+        }
+        if (!DEVICE_TRIGGERABLE_COMMANDS.has(cmd)) {
+            vscode.window.showErrorMessage(`接收到未知的 HTTP 指令 "${cmd}"`);
+            return;
+        }
+        vscode.commands.executeCommand(`extension.${cmd}`, filePath);
     }
 
     private registerCommands() {
-        if (this.context === null) {
-            throw Error('Extension context must be assigned first before accessing');
-        }
         Extension.commands.forEach((command) => {
-            let action = this.getBoundAction(command);
-            this.context.subscriptions.push(vscode.commands.registerCommand(`extension.${command}`, action));
-        });
-    }
-
-    private getWrappedGlobalState() {
-        let globalState = this.context.globalState;
-        let ipAddressRecordPrefix = this.picks.recordPrefix.label;
-        let attach = function (addr: string) {
-            let idx = addr.lastIndexOf(ipAddressRecordPrefix);
-            return idx < 0 ? ipAddressRecordPrefix + addr : addr;
-        };
-        let detach = function (addr: string) {
-            let idx = addr.lastIndexOf(ipAddressRecordPrefix);
-            return idx < 0 ? addr : addr.slice(idx + ipAddressRecordPrefix.length);
-        };
-        let state: Memento = {
-            keys(): readonly string[] {
-                return globalState.keys();
-            },
-            get(key: string): string[] {
-                return (globalState.get(key, []) as string[]).map(attach);
-            },
-            update(key: string, addresses: string[]): Thenable<void> {
-                let deduped = Array.from(new Set(addresses.map(detach)));
-                return globalState.update(key, deduped.filter(addr => addr && addr !== IP_LOOP_BACK));
-            },
-        };
-        return state;
-    }
-
-    private getBoundAction(command: keyof Extension) {
-        let fn = this[command];
-        if (typeof fn === 'function') {
-            return fn.bind(this);
-        }
-        throw Error(`Invalid command: ${command}`);
-    }
-
-    private matchDevice(dev: string): DeviceInfo {
-        let matched = /(\S+)\s+device\s(.+)/g.exec(dev);
-        if (!matched || matched.length !== 3) {
-            return null;
-        }
-        let n = matched[2];
-        let o = { id: matched[1], brand: 'Unknown', model: 'Unknown', name: 'NoName' };
-
-        for (let p = 0, i = n.indexOf(':'); i >= 0 && i < n.length;) {
-            let k = i;
-            i = n.indexOf(':', k + 1);
-            if (i == -1) {
-                i = n.length;
+            const fn = this[command];
+            if (typeof fn !== 'function') {
+                throw Error(`Invalid command: ${command}`);
             }
-            let j = n.lastIndexOf(' ', i);
-            o[n.substring(p, k)] = j == -1 ? n.substring(k + 1, i) : n.substring(k + 1, j);
-            p = j + 1;
-        }
-        let res = this.adb.exec([ '-s', o.id, 'shell', 'getprop', 'ro.product.brand' ]).stdout;
-        if (res) {
-            o.brand = res.toString().trim();
-            o.name = `${o.brand} ${o.model} (${o.id})`;
-        }
-        return o;
-    }
-
-    private selectDevices(callback: (devices: Device[]) => void) {
-        if (!this.client.hasDevices()) {
-            vscode.window.showErrorMessage('未发现已连接的设备');
-            return false;
-        }
-        let devices = this.client.devices;
-        // if (recentDevice) {
-        //     let idx = devices.indexOf(recentDevice);
-        //     if (idx > 0) {
-        //         devices = devices.slice(0);
-        //         devices[idx] = devices[0];
-        //         devices[0] = recentDevice;
-        //         recentDevice = null
-        //     }
-        // }
-        // vscode.window.showQuickPick(devices.map(dev => dev.toString()), {
-        //     canPickMany: true,
-        // }).then((selected) => {
-        //     callback(devices.filter(dev => selected.includes(dev.toString())));
-        // });
-        this.showQuickPickForDeviceSelection(devices, callback);
-        return true;
-    }
-
-    private showQuickPickForDeviceSelection(devices: any[], callback: (selected: any[]) => void) {
-        const quickPick = vscode.window.createQuickPick();
-
-        quickPick.items = devices.map(dev => ({ label: dev.toString() })); // 将设备映射成 QuickPickItem
-        quickPick.canSelectMany = true;
-
-        quickPick.onDidAccept(() => {
-            const activeItem = quickPick.activeItems[0]; // 当前光标所在的项目
-            const selectedItems = quickPick.selectedItems; // 已选中的项目
-
-            let finalSelection: string[];
-
-            if (selectedItems.length === 0) {
-                // 如果没有任何勾选项，选中当前光标所在的项目
-                finalSelection = activeItem ? [ activeItem.label ] : [];
-            } else {
-                // 有已选中的项目，将所有已选择的项目与当前光标所在的项目取并集
-                const selectedSet = new Set(selectedItems.map(item => item.label));
-                if (activeItem) {
-                    selectedSet.add(activeItem.label); // 包含当前光标所在的项目
+            this.context.subscriptions.push(vscode.commands.registerCommand(`extension.${command}`, (...args: any[]) => {
+                try {
+                    const result = (fn as Function).apply(this, args);
+                    if (result && typeof result.then === 'function') {
+                        result.catch((e: Error) => this.reportError(command, e));
+                    }
+                } catch (e) {
+                    this.reportError(command, e as Error);
                 }
-                finalSelection = Array.from(selectedSet); // 去重
-            }
-
-            const selectedDevices = devices.filter(dev => finalSelection.includes(dev.toString()));
-            callback(selectedDevices);
-
-            quickPick.hide();
+            }));
         });
-
-        quickPick.onDidHide(() => {
-            quickPick.dispose(); // 清理资源
-        });
-
-        quickPick.show(); // 显示 QuickPick
     }
 
-    private sendProjectCommand(command: ProjectCommands, url?: string) {
-        let folder = null;
-        if (!url) {
-            let folders = vscode.workspace.workspaceFolders;
-            if (!folders || folders.length === 0) {
-                // vscode.window.showInformationMessage('An opened AutoJs6 project is needed');
-                vscode.window.showInformationMessage('需要一个已打开的 AutoJs6 项目');
-                return null;
-            }
-            folder = folders[0].uri;
+    private reportError(command: string, e: Error) {
+        logError(`command ${command} failed:`, e);
+        vscode.window.showErrorMessage(e instanceof DeviceError ? e.message : `AutoJs6: ${e.message || e}`);
+    }
+
+    private initViews() {
+        const fsProvider = new RemoteFileSystemProvider(this.devices);
+        const devicesTree = new DevicesTreeProvider(this.devices);
+        const filesTree = new DeviceFilesTreeProvider(this.devices, fsProvider);
+        this.context.subscriptions.push(
+            vscode.workspace.registerFileSystemProvider(REMOTE_SCHEME, fsProvider, { isCaseSensitive: true }),
+            vscode.window.createTreeView('autojs6.devices', { treeDataProvider: devicesTree, showCollapseAll: false }),
+            vscode.window.createTreeView('autojs6.deviceFiles', { treeDataProvider: filesTree, showCollapseAll: true }),
+        );
+        new RemoteFileCommands(this.devices, fsProvider, filesTree).register(this.context);
+    }
+
+    private updateStatusBar() {
+        const count = this.devices.devices.length;
+        const sessions = this.devices.reconnectSessions;
+        const lines: string[] = [];
+        if (count === 0) {
+            this.statusBar.text = sessions.length > 0 ? `$(sync~spin) AutoJs6: 重连中 (${sessions.length})` : '$(device-mobile) AutoJs6: 无设备';
+            lines.push(this.devices.isListening
+                ? `AutoJs6: 未连接设备. 正在监听端口 ${this.devices.listeningPort}. 点击建立连接.`
+                : `AutoJs6: 未连接设备. 端口 ${Settings.serverPort} 监听失败. 点击建立连接.`);
         } else {
-            folder = Uri.parse(url);
+            this.statusBar.text = sessions.length > 0 ? `$(sync~spin) AutoJs6: ${count}` : `$(device-mobile) AutoJs6: ${count}`;
+            lines.push('AutoJs6 已连接设备:', ...this.devices.devices.map(d => `- ${d} [${d.versionName}]`));
         }
-        if (!this.client.project || this.client.project.projectDirUri !== folder) {
-            this.client.project && this.client.project.dispose();
-            let project = new Project(folder);
-            if (Object.getPrototypeOf(project) === null) {
-                return;
+        if (sessions.length > 0) {
+            lines.push('正在重连:', ...sessions.map(s => `- ${describeTarget(s.target)} (第 ${s.attempts + 1} 次${s.lastError ? `, ${s.lastError}` : ''})`));
+        }
+        this.statusBar.tooltip = lines.join('\n');
+        this.statusBar.show();
+        vscode.commands.executeCommand('setContext', 'autojs6.connected', count > 0);
+        vscode.commands.executeCommand('setContext', 'autojs6.reconnecting', sessions.length > 0);
+    }
+
+    /* IP records. zh-CN: IP 地址记录. */
+
+    private loadRecords(): IpRecord[] {
+        const raw = this.storage.get<string[]>(STORAGE_KEY_RECORDS, []);
+        const records: IpRecord[] = [];
+        const seen = new Set<string>();
+        for (const item of raw) {
+            if (typeof item !== 'string') continue;
+            let [ ip, ts ] = item.split('|');
+            ip = (ip || '').replace(/^\[ [^\]]+ ] - /, '').trim();
+            if (!ip || STORAGE_IP_BLACKLIST.includes(ip) || seen.has(ip)) continue;
+            seen.add(ip);
+            records.push({ ip, ts: parseInt(ts || '', 10) || 0 });
+        }
+        return records;
+    }
+
+    private saveRecords(records: IpRecord[]) {
+        this.storage.update(STORAGE_KEY_RECORDS, records.map(r => `${r.ip}|${r.ts}`));
+    }
+
+    /* Restorable targets (roadmap 3.9). zh-CN: 可恢复的连接目标 (roadmap 3.9). */
+
+    private loadTargets(): SavedTarget[] {
+        const raw = this.storage.get<SavedTarget[]>(STORAGE_KEY_TARGETS, []);
+        return Array.isArray(raw) ? raw.filter(t => t && typeof t.host === 'string' && typeof t.port === 'number') : [];
+    }
+
+    private saveTargets(targets: SavedTarget[]) {
+        this.storage.update(STORAGE_KEY_TARGETS, targets.slice(0, 20));
+    }
+
+    private static savedKey(t: SavedTarget): string {
+        return targetKey({ type: t.type, host: t.host, port: t.port, adbDeviceId: t.adbDeviceId });
+    }
+
+    private rememberTarget(target: ConnectionTarget) {
+        if (target.type === ConnectionType.CLIENT_LAN) return;
+        const key = targetKey(target);
+        const targets = this.loadTargets().filter(t => Extension.savedKey(t) !== key);
+        const saved: SavedTarget = { type: target.type, host: target.host, port: target.port, ts: Date.now() };
+        if (target.type === ConnectionType.SERVER_ADB) {
+            saved.adbDeviceId = target.adbDeviceId;
+            saved.label = target.label;
+            saved.host = IP_LOOP_BACK;
+            saved.port = 0;
+        }
+        targets.unshift(saved);
+        this.saveTargets(targets);
+    }
+
+    private forgetTarget(target: ConnectionTarget) {
+        const key = targetKey(target);
+        const targets = this.loadTargets();
+        const kept = targets.filter(t => Extension.savedKey(t) !== key);
+        if (kept.length !== targets.length) {
+            this.saveTargets(kept);
+            logDebug(`forgot target ${key}`);
+        }
+    }
+
+    private toConnectionTarget(saved: SavedTarget): ConnectionTarget {
+        return saved.type === ConnectionType.SERVER_ADB && saved.adbDeviceId
+            ? this.createAdbTarget(saved.adbDeviceId, saved.label)
+            : this.createLanTarget(saved.host, saved.port);
+    }
+
+    /**
+     * Reconnect to the targets that were connected when VSCode closed (opt-out via `autojs6.connection.restoreOnStartup`).
+     * zh-CN: 恢复 VSCode 关闭时仍连接的目标 (可通过 `autojs6.connection.restoreOnStartup` 关闭).
+     */
+    private restoreConnections() {
+        if (!Settings.restoreOnStartup) return;
+        const targets = this.loadTargets();
+        if (targets.length === 0) return;
+        logDebug(`restoring ${targets.length} connection(s):`, targets);
+        targets.forEach((saved) => {
+            try {
+                this.devices.startReconnect(this.toConnectionTarget(saved), '恢复上次连接', true);
+            } catch (e) {
+                logError('failed to restore connection:', e);
             }
-            this.client.project = project;
-        }
-        if (!this.client.sendProjectCommand(folder.fsPath, command)) {
-            vscode.window.showErrorMessage('未发现已连接的设备');
-        }
+        });
     }
 
-    private showCommandHierarchy() {
-        vscode.window.showInformationMessage('将在后续版本实现当前功能');
-    }
-
-    private connectByAdb() {
-        let devices = this.listAdbDevices();
-        if (typeof devices !== 'object' || devices.size === 0) {
-            vscode.window.showErrorMessage('未发现通过 ADB 连接的设备');
+    private rememberIp(device: Device) {
+        const ip = device.remoteAddress;
+        if (!ip || STORAGE_IP_BLACKLIST.includes(ip) || device.connectionTarget?.adbDeviceId) {
             return;
         }
-        let commands = Array.from(devices.entries()).map((entry) => {
-            let [ summary, deviceInfo ] = entry;
-            return {
-                label: summary.toString(),
-                detail: `型号: ${deviceInfo.model}, 产品名称: ${deviceInfo['product']}`,
-            };
-        });
-        this.showQuickPickForAjServerAdbConnecting(commands).then((cmd) => awaiter(function* () {
-            if (typeof cmd !== 'string') {
-                return;
-            }
-            let dev = devices.get(cmd);
-            if (!dev) {
-                return;
-            }
-            let ports: ({ src: number; dst: number })[] = [ {
-                src: yield this.findAvailPorts(),
-                dst: Device.defaultClientPort,
-            }, {
-                src: yield this.findAvailPorts(),
-                dst: Device.defaultAdbServerPort,
-            } ];
-
-            try {
-                logDebug(`adb device id: ${dev.id}`);
-                ports.forEach((port) => {
-                    logDebug(`got an adb source port: ${port.src}`);
-                    this.adb.execOrThrow([ '-s', dev.id, 'forward', 'tcp:' + port.src, 'tcp:' + port.dst ]);
-                });
-
-                let idTimeout = setTimeout(() => this.onAdbDeviceConnectTimeout(dev), 5e3);
-
-                this.client.connectTo(IP_LOOP_BACK, ports[0].src, ConnectionType.SERVER_ADB, dev.id)
-                    .then(() => clearTimeout(idTimeout));
-            } catch (e) {
-                vscode.window.showErrorMessage(e.toString());
-                return null;
-            }
-        }.bind(this)));
+        const records = this.loadRecords().filter(r => r.ip !== ip);
+        records.unshift({ ip, ts: Date.now() });
+        this.saveRecords(records.slice(0, 50));
     }
 
-    private listAdbDevices(): Map<string, DeviceInfo> {
-        let res: SpawnSyncReturns<Buffer> = this.adb.exec([ 'devices', '-l' ]);
-        if (res.pid === 0) {
-            vscode.window.showErrorMessage('ADB 可能未安装或未被正确配置', '查看如何配置 ADB').then((choice) => {
-                choice && vscode.env.openExternal(vscode.Uri.parse('https://segmentfault.com/a/1190000021822394'));
-            });
-            return null;
-        }
-        let map = new Map<string, DeviceInfo>();
-        res.stdout.toString().split('\r\n').forEach((dev) => {
-            let dev_info = this.matchDevice(dev);
-            if (dev_info !== null) {
-                map.set(dev_info.name, dev_info);
-            }
-        });
-        logDebug('devices: ', map);
-        return map;
-    }
+    /* Script helpers. zh-CN: 脚本辅助. */
 
-    findAvailPorts(): Promise<number> {
-        let findPorts: () => (portInfo?: { port: number | number[] }) => Promise<number> = function () {
-            class Err extends Error {
-                constructor(o: string) {
-                    super(o + ' is locked');
-                }
-            }
-
-            const cache = {
-                old: new Set,
-                young: new Set,
-            };
-
-            const parsePort: (portHolder: { port: number }) => Promise<number> = (portHolder: { port: number }) => {
-                return new Promise((resolve, reject) => {
-                    let server = net.createServer();
-                    server.unref();
-                    server.on('error', reject);
-                    server.listen(portHolder, () => {
-                        const { port: serverPort } = server.address() as AddressInfo;
-                        server.close(() => resolve(serverPort));
-                    });
-                });
-            };
-
-            let itvId: NodeJS.Timeout;
-
-            return async (portInfo?: { port: number | number[] }) => {
-                if (itvId === undefined) {
-                    itvId = setInterval(() => {
-                        cache.old = cache.young;
-                        cache.young = new Set;
-                    }, 15e3);
-                    if (typeof itvId.unref === 'function') {
-                        itvId.unref();
-                    }
-                }
-                for (let port of function* $iiFe() {
-                    if (portInfo) {
-                        yield* (typeof portInfo.port === 'number' ? [ portInfo.port ] : portInfo.port);
-                    }
-                    yield 0;
-                }()) {
-                    try {
-                        let parsedPort = await parsePort({ ...portInfo, port: port });
-                        while (cache.old.has(parsedPort) || cache.young.has(parsedPort)) {
-                            if (port !== 0) {
-                                // noinspection ExceptionCaughtLocallyJS
-                                throw new Err(String(port));
-                            }
-                            parsedPort = await parsePort({ ...portInfo, port: port });
-                        }
-                        cache.young.add(parsedPort);
-                        return parsedPort;
-                    } catch (t) {
-                        if (![ 'EADDRINUSE', 'EACCES' ].includes(t.code) && !(t instanceof Err)) {
-                            throw t;
-                        }
-                    }
-                }
-                throw new Error('No available ports found');
-            };
+    private static extensionForLanguage(languageId: string): string {
+        const map: { [lang: string]: string } = {
+            bat: 'bat', c: 'c', css: 'css', go: 'go', html: 'html', java: 'java', javascript: 'js', javascriptreact: 'jsx',
+            json: 'json', lua: 'lua', markdown: 'md', php: 'php', plaintext: 'txt', powershell: 'ps1', python: 'py', r: 'r',
+            shellscript: 'sh', sql: 'sql', typescript: 'ts', typescriptreact: 'tsx', vue: 'vue', xml: 'xml', xsl: 'xsl', yaml: 'yaml',
         };
-
-        return (this.findAvailPorts = findPorts.call(this))();
+        return map[languageId] || 'js';
     }
 
-    onAdbDeviceConnectTimeout(device: DeviceInfo) {
-        let res = this.adb.execOrThrow([
-            '-s', device.id, 'shell', 'content', 'query',
-            '--uri', 'content://org.autojs.autojs.debug.provider/debug-server',
-        ]);
-        let stdout = res.stdout.toString();
-        let stderr = res.stderr.toString();
-        let errEnsureServerModeOn = '请确认 AutoJs6 侧拉菜单已开启 "服务端模式 (Server mode)"';
-
-        logDebug('query result: stdout = %s, stderr = %s, result = ', stdout, stderr, res);
-
-        if ((stdout + stderr).includes('Could not find provider')) {
-            vscode.window.showWarningMessage(errEnsureServerModeOn);
-        } else {
-            const matched = stdout.match(/state=(\d+)/);
-            if (matched === null || parseInt(matched[1]) !== 2) {
-                vscode.window.showErrorMessage(errEnsureServerModeOn);
-            }
-        }
+    private static editorFileName(editor: TextEditor): string {
+        const fileName = editor.document.fileName;
+        return editor.document.isUntitled ? `${fileName}.${Extension.extensionForLanguage(editor.document.languageId)}` : fileName;
     }
 
-    connect() {
-        const prefixRecord = `[ ${picker.operations.record} ] - `;
-        let ipAddressRecords = this.storage.get(this.storageKey, []);
-
-        let isUpdated = false;
-
-        for (let i = 0; i < ipAddressRecords.length; i += 1) {
-            let data = ipAddressRecords[i];
-            let [ ip ] = data.split('|');
-            ip = ip.replace(prefixRecord, '');
-            if (storageIpAddressBlacklist.includes(ip)) {
-                ipAddressRecords.splice(i--, 1);
-                isUpdated = true;
-            }
-        }
-
-        if (isUpdated) {
-            this.storage.update(this.storageKey, ipAddressRecords);
-        }
-
-        ipAddressRecords = ipAddressRecords.map((data: string) => {
-            let [ ip, ts ] = data.split('|');
-            let o: vscode.QuickPickItem = {
-                label: ip.startsWith(prefixRecord) ? ip : `${prefixRecord}${ip}`,
-            };
-            if (ts && ts.match(/^\d+$/) !== null) {
-                let date = new Date(Number(ts));
-
-                let yyyy = date.getFullYear();
-                let MM = String((date.getMonth() + 1)).padStart(2, '0');
-                let dd = String(date.getDate()).padStart(2, '0');
-                let HH = String(date.getHours()).padStart(2, '0');
-                let mm = String(date.getMinutes()).padStart(2, '0');
-                let ss = String(date.getSeconds()).padStart(2, '0');
-
-                let dateString = `${yyyy}/${MM}/${dd} ${HH}:${mm}:${ss}`;
-                o.detail = `最近连接: ${dateString}`;
-            }
-            return o;
-        });
-        const commands = [
-            this.picks.ajClientLan,
-            // this.picks.ajClientQr,
-            this.picks.ajServerLan,
-            this.picks.ajServerAdb,
-        ];
-
-        this.showQuickPickForConnectionHomepage(commands).then((cmd) => {
-            switch (cmd) {
-                case undefined:
-                    break;
-                case this.picks.ajClientLan.label:
-                    this.connectToLocalHint();
-                    break;
-                case this.picks.ajClientQr.label:
-                    Extension.showLocalQrCode();
-                    break;
-                case this.picks.ajServerLan.label:
-                    const records = ipAddressRecords.concat(ipAddressRecords.length > 0 ? this.picks.recordClear : []);
-                    this.showQuickPickForAjServerLanConnecting(records).then((cmd) => {
-                        switch (cmd) {
-                            case this.picks.recordClear.label:
-                                this.showAlternativePick(`确认清除所有已保存的记录吗`).then((s) => {
-                                    if (s === STRING_YES) {
-                                        let total = this.storage.get(this.storageKey, []).length;
-                                        this.storage.update(this.storageKey, []);
-                                        vscode.window.showInformationMessage(`清理完成, 共计 ${total} 项`);
-                                    }
-                                });
-                                break;
-                            default:
-                                this.connectToServerLan(cmd);
-                        }
-                    });
-                    break;
-                case this.picks.ajServerAdb.label:
-                    this.connectByAdb();
-                    break;
-                default: // Nothing to do so far.
-            }
-        });
+    /** Path relative to the containing workspace folder (POSIX), or `undefined`. zh-CN: 相对工作区目录的路径. */
+    private static relativeWorkspacePath(uri: Uri): string | undefined {
+        if (uri.scheme !== 'file') return undefined;
+        const folder = vscode.workspace.getWorkspaceFolder(uri);
+        if (!folder) return undefined;
+        const rel = path.relative(folder.uri.fsPath, uri.fsPath);
+        if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return undefined;
+        return toPosixPath(rel);
     }
 
-    connectToServerLan(cmd: any) {
-        if (typeof cmd === 'string') {
-            let port = Device.defaultClientPort;
-            let host = picker.operations.removeOperation(cmd.trim());
-            if (host.match(regexIpAddress) !== null) {
-                if (host.includes(':')) {
-                    let split = host.split(':');
-                    let portInput = split[1];
-                    if (portInput !== String(port)) {
-                        vscode.window.showWarningMessage(`端口号 ${portInput} 已被忽略, 使用 ${port}`);
-                    }
-                    host = split[0];
+    private payloadFromEditor(editor: TextEditor): ScriptPayload {
+        const fileName = Extension.editorFileName(editor);
+        const payload: ScriptPayload = {
+            id: editor.document.fileName,
+            name: path.basename(fileName),
+            script: editor.document.getText(),
+        };
+        if (Settings.saveKeepRelativePath) {
+            payload.path = Extension.relativeWorkspacePath(editor.document.uri);
+        }
+        return payload;
+    }
+
+    private payloadFromFile(fsPath: string): ScriptPayload {
+        const payload: ScriptPayload = {
+            id: fsPath,
+            name: path.basename(fsPath),
+            script: fs.readFileSync(fsPath, 'utf8'),
+        };
+        if (Settings.saveKeepRelativePath) {
+            payload.path = Extension.relativeWorkspacePath(Uri.file(fsPath));
+        }
+        return payload;
+    }
+
+    private static refinePath(urlOrUri?: string | Uri | { fsPath?: string }): string | undefined {
+        if (!urlOrUri) return undefined;
+        if (typeof urlOrUri === 'string') {
+            const s = urlOrUri.trim();
+            if (!s) return undefined;
+            if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
+                try {
+                    return Uri.parse(s).fsPath;
+                } catch (e) {
+                    return s;
                 }
-                vscode.window.showInformationMessage(`正在连接至 AutoJs6 服务端 (${host})...`);
-                this.client.connectTo(host, port, ConnectionType.SERVER_LAN).catch((e) => {
-                    logDebug(e);
-                    vscode.window.showErrorMessage(`无法连接至 AutoJs6 服务端 (${host})`, '查看解决方案').then((choice) => {
-                        if (choice) {
-                            const header = 'AutoJs6 服务端连接诊断';
-                            vscode.window.showInformationMessage(header, {
-                                detail: [
-                                    `检查 AutoJs6 主页侧拉抽屉是否已开启 "服务端模式"`,
-                                    `检查两端设备是否位于同一局域网`,
-                                    `检查 VSCode 所在设备的防火墙是否允许 ${port} 端口通信`,
-                                    `尝试使用其他方式 (如 ADB 等) 建立连接`,
-                                ].map(s => `- ${s}`).join('\n'),
-                                modal: true,
-                            });
-                        }
-                    });
-                });
-            } else {
-                vscode.window.showErrorMessage(`连接 AutoJs6 服务端失败, 无法解析地址 ${cmd}`);
             }
+            return s;
         }
-    }
-
-    private async showQuickPickForConnectionHomepage<T extends vscode.QuickPickItem>(commands: T[]) {
-        const disposables: Disposable[] = [];
-        try {
-            return await new Promise<string | T | T[] | undefined>((resolve) => {
-                const input = vscode.window.createQuickPick();
-                const basicNicAddresses = util.getBasicNetworkInterfaces();
-                if (basicNicAddresses.length === 1) {
-                    input.title = `当前活动 IP: ${basicNicAddresses[0].ip4}`;
-                } else if (basicNicAddresses.length > 1) {
-                    input.title = `当前活动 IP: [ ${basicNicAddresses.map(o => o.ip4).join(', ')} ]`;
-                }
-                input.placeholder = PLACEHOLDER_INPUT_OR_SELECT_A_WAY_TO_CONNECT;
-                input.items = commands;
-                input.buttons = [
-                    ...[],
-                    ...[],
-                    ...[],
-                    ...[ pickButtons.close ],
-                ];
-
-                disposables.push(
-                    // input.onDidAccept(() => {
-                    //     logDebug(input.value)
-                    // }),
-                    input.onDidChangeSelection((items) => {
-                        const item = items[0];
-                        resolve(item.label);
-                        input.hide();
-                    }),
-                    input.onDidHide(() => {
-                        resolve(undefined);
-                        input.dispose();
-                    }),
-                    // input.onDidChangeActive((quickItems) => {
-                    //     const label = quickItems[0].label;
-                    //     logDebug(label);
-                    //     const prefixRecord = '[ 记录 ] - ';
-                    //     const prefixDefault = DEFAULT_QUICK_PICK_PLACEHOLDER;
-                    //     if (label.startsWith(prefixRecord)) {
-                    //         input.placeholder = `使用局域网连接至 AutoJs6 服务端 (${label.slice(prefixRecord.length)})`;
-                    //     } else {
-                    //         input.placeholder = prefixDefault;
-                    //     }
-                    // }),
-                    input.onDidTriggerButton((item) => {
-                        if (item === pickButtons.close) {
-                            input.hide();
-                        }
-                    }),
-                );
-                input.show();
-            });
-        } finally {
-            disposables.forEach(d => d.dispose());
-        }
-    }
-
-    private async showQuickPickForAvailableNetworkInterfaces(items: util.NIDetails[]) {
-        const sep = ' | ';
-        const disposables: Disposable[] = [];
-        try {
-            return await new Promise<string | undefined>((resolve) => {
-                const input = vscode.window.createQuickPick();
-
-                input.title = `当前活动的网络接口`;
-
-                (async () => {
-                    const detailedNetworkInterfaces = await util.getDetailedNetworkInterfaces(items);
-                    input.placeholder = PLACEHOLDER_INPUT_OR_SELECT_A_NETWORK_INTERFACE;
-                    input.items = input.items.map((item) => {
-                        if (item.detail === undefined) return item;
-                        let ip4 = item.detail.split(sep)[0];
-                        let aim = detailedNetworkInterfaces.find(o => o.ip4 === ip4);
-                        if (aim === undefined) return item;
-                        let { ifaceName, type, speed, default: def } = aim;
-                        if (ifaceName !== undefined) item.label += sep + ifaceName;
-                        if (type !== undefined) item.detail += sep + this.translateNetworkType(type);
-                        if (speed !== undefined) item.detail += sep + speed + ' Mbps';
-                        if (def !== undefined && def) item.detail += sep + '默认网络接口';
-                        return item;
-                    });
-                })();
-
-                input.placeholder = PLACEHOLDER_INPUT_OR_SELECT_A_NETWORK_INTERFACE + ` [ ${PLACEHOLDER_FETCHING_DETAILS_IN_BACKGROUND}... ]`;
-                input.items = items.map(item => {
-                    let label = item.iface;
-                    let detail = item.ip4 + sep + item.mac.toLowerCase();
-                    return { label, detail };
-                });
-                input.buttons = [
-                    ...[],
-                    ...[],
-                    ...[],
-                    ...[ pickButtons.close ],
-                ];
-
-                disposables.push(
-                    input.onDidChangeSelection((items) => {
-                        const item = items[0];
-                        resolve(item?.detail?.split(sep)?.[0]);
-                        input.hide();
-                    }),
-                    input.onDidHide(() => {
-                        resolve(undefined);
-                        input.dispose();
-                    }),
-                    input.onDidTriggerButton((item) => {
-                        if (item === pickButtons.close) {
-                            input.hide();
-                        }
-                    }),
-                );
-                input.show();
-            });
-        } finally {
-            disposables.forEach(d => d.dispose());
-        }
-    }
-
-    private async showAlternativePick(title: string) {
-        const disposables: Disposable[] = [];
-        try {
-            return await new Promise<string | undefined>((resolve) => {
-                const input = vscode.window.createQuickPick();
-                input.title = title;
-                input.placeholder = PLACEHOLDER_INPUT_OR_SELECT_A_WAY_TO_CONNECT;
-                input.items = [ { label: STRING_YES }, { label: STRING_NO } ];
-                input.buttons = [
-                    ...[],
-                    ...[],
-                    ...[],
-                    ...[ pickButtons.close ],
-                ];
-
-                disposables.push(
-                    input.onDidChangeSelection((items) => {
-                        const item = items[0];
-                        resolve(item.label);
-                        input.hide();
-                    }),
-                    input.onDidHide(() => {
-                        resolve(undefined);
-                        input.dispose();
-                    }),
-                    input.onDidTriggerButton((item) => {
-                        if (item === pickButtons.close) {
-                            input.hide();
-                        }
-                    }),
-                );
-                input.show();
-            });
-        } finally {
-            disposables.forEach(d => d.dispose());
-        }
-    }
-
-    private async showQuickPickForAjServerLanConnecting<T extends vscode.QuickPickItem>(commands: T[], options: { title?: string, placeholder?: string } = {}) {
-        const disposables: Disposable[] = [];
-        try {
-            return await new Promise<string | T | T[] | undefined | Promise<any>>((resolve) => {
-                const input = vscode.window.createQuickPick();
-                input.title = options.title || `连接到 AutoJs6 服务端`;
-                input.placeholder = options.placeholder || `输入或选择 AutoJs6 服务端 IP 地址, 按回车 (Enter) 键建立连接`;
-                input.items = commands;
-                input.buttons = [
-                    ...[],
-                    ...[],
-                    ...[],
-                    ...[ pickButtons.close ],
-                ];
-
-                disposables.push(
-                    input.onDidAccept(() => {
-                        resolve(input.value);
-                        input.hide();
-                    }),
-                    input.onDidChangeSelection((items) => {
-                        const item = items[0];
-                        const pureLabel = picker.operations.removeOperation(item.label);
-                        const isConflicted = regexIpAddress.test(input.value)
-                            && pureLabel.includes(input.value)
-                            && pureLabel !== input.value;
-                        if (isConflicted) {
-                            const prefixOptional = `[ ${picker.operations.optional} ] - `;
-                            const optionalItem = { label: `${prefixOptional}${input.value}` };
-                            resolve(this.showQuickPickForAjServerLanConnecting([ optionalItem, item ], {
-                                title: `IP 地址出现歧义, 需进一步确认`,
-                                placeholder: `选择一个 IP 地址, 按回车 (Enter) 键建立连接`,
-                            }));
-                        } else {
-                            resolve(item.label);
-                        }
-                        input.hide();
-                    }),
-                    input.onDidHide(() => {
-                        resolve(undefined);
-                        input.dispose();
-                    }),
-                    input.onDidTriggerButton((item) => {
-                        if (item === pickButtons.close) {
-                            input.hide();
-                        }
-                    }),
-                );
-                input.show();
-            });
-        } finally {
-            disposables.forEach(d => d.dispose());
-        }
-    }
-
-    private async showQuickPickForAjServerAdbConnecting<T extends vscode.QuickPickItem>(commands: T[]) {
-        const disposables: Disposable[] = [];
-        try {
-            return await new Promise<string | T | T[] | undefined>((resolve) => {
-                const input = vscode.window.createQuickPick();
-                input.title = `连接到 AutoJs6 服务端`;
-                input.placeholder = `输入或选择需要连接的设备, 按回车 (Enter) 键建立连接`;
-                input.items = commands;
-                input.buttons = [
-                    ...[], // ...[QuickInputButtons.Back],
-                    ...[],
-                    ...[],
-                    ...[ pickButtons.close ],
-                ];
-
-                disposables.push(
-                    input.onDidAccept(() => {
-                        resolve(input.value);
-                        input.hide();
-                    }),
-                    input.onDidChangeSelection((items) => {
-                        const item = items[0];
-                        resolve(item?.label);
-                        input.hide();
-                    }),
-                    input.onDidHide(() => {
-                        resolve(undefined);
-                        input.dispose();
-                    }),
-                    input.onDidTriggerButton((item) => {
-                        if (item === pickButtons.close) {
-                            input.hide();
-                        }
-                    }),
-                );
-                input.show();
-            });
-        } finally {
-            disposables.forEach(d => d.dispose());
-        }
-    }
-
-    private translateNetworkType(type: string): string {
-        switch (type.toLowerCase()) {
-            case 'wired':
-                return '有线网络';
-            case 'wireless':
-                return '无线网络';
-            case 'virtual':
-                return '虚拟网络';
-            case 'unknown':
-                return '未知网络';
-            case 'other':
-                return '其他网络';
-            default:
-                return type.toUpperCase(); // 未知类型，返回大写形式
-        }
-    }
-
-    viewDocument() {
-        vscode.env.openExternal(vscode.Uri.parse('https://docs.autojs6.com/'));
-    }
-
-    disconnectAll() {
-        this.client.disconnect();
-        vscode.window.showInformationMessage('AutoJs6 已断开所有连接');
-        // vscode.window.showInformationMessage('All connections to AutoJs6 disconnected');
-    }
-
-    run(urlOrArgs?: string | Uri) {
-        logDebug('run argument: ' + urlOrArgs);
-        return this.runFile(this.getRefinedUrl(urlOrArgs));
-    }
-
-    runWithoutArguments() {
-        return this.run(undefined);
-    }
-
-    private getRefinedUrl(url?: string | Uri): string | undefined {
-        if (typeof url === 'object' && url !== null && typeof url.path === 'string') {
-            return url.path;
-        }
-        if (typeof url === 'string') {
-            return url;
+        if (typeof (urlOrUri as any).fsPath === 'string') {
+            return (urlOrUri as Uri).fsPath;
         }
         return undefined;
     }
 
-    stop() {
-        this.client.sendCommand('stop', {
-            id: vscode.window.activeTextEditor?.document.fileName,
+    private currentEditorOrThrow(): TextEditor {
+        const editor = this.lastActiveEditor;
+        if (!editor || editor.document.uri.scheme === 'output') {
+            throw new DeviceError('需在正在编辑的文件窗口中使用此命令');
+        }
+        return editor;
+    }
+
+    private connectedDevicesOrThrow(): Device[] {
+        if (!this.devices.hasDevices()) {
+            throw new DeviceError('未发现已连接的设备');
+        }
+        return this.devices.devices;
+    }
+
+    private async pickDevices(title: string): Promise<Device[] | undefined> {
+        const devices = this.connectedDevicesOrThrow();
+        if (devices.length === 1) {
+            return devices;
+        }
+        const picked = await showMultiPick({
+            title,
+            placeholder: '勾选一个或多个设备, 按回车 (Enter) 键确认',
+            items: devices.map(d => ({ label: d.toString(), description: `AutoJs6 ${d.versionName}`, device: d })),
+        });
+        return picked?.map(p => p.device);
+    }
+
+    private runOn(devices: Device[], fsPath?: string) {
+        const payload = fsPath ? this.payloadFromFile(fsPath) : this.payloadFromEditor(this.currentEditorOrThrow());
+        if (this.lastActiveEditor?.document.uri.scheme === REMOTE_SCHEME && !fsPath) {
+            // Remote file: run it in place on its own device. zh-CN: 远程文件直接在所属设备上运行.
+            const uri = this.lastActiveEditor.document.uri;
+            const device = this.devices.getDevice(decodeURIComponent(uri.authority));
+            if (device) {
+                device.request('script.run', { path: uri.path }).catch(e => this.reportError('run', e));
+                return;
+            }
+        }
+        const count = this.devices.sendCommand('run', payload, devices);
+        logDebug(`run "${payload.name}" on ${count} device(s)`);
+    }
+
+    private saveOn(devices: Device[]) {
+        const editor = this.currentEditorOrThrow();
+        if (editor.document.uri.scheme === REMOTE_SCHEME) {
+            throw new DeviceError('远程文件请直接使用 VSCode 的保存功能');
+        }
+        const payload = this.payloadFromEditor(editor);
+        const count = this.devices.sendCommand('save', payload, devices);
+        vscode.window.showInformationMessage(`已发送 "${payload.path || payload.name}" 到 ${count} 台设备`);
+    }
+
+    /* Connection. zh-CN: 连接. */
+
+    async connect() {
+        const interfaces = util.getBasicNetworkInterfaces();
+        const title = interfaces.length > 0 ? `当前活动 IP: ${interfaces.map(o => o.ip4).join(', ')}` : '未找到可用的局域网 IP 地址';
+        const picked = await showPick({
+            title,
+            placeholder: '输入或选择连接建立方式',
+            items: [
+                { label: LABEL.ajClientLan, detail: 'AutoJs6 (客户端模式) 主动连接至本机 (输入本机 IP 地址)' },
+                { label: LABEL.ajClientQr, detail: 'AutoJs6 (客户端模式) 扫描二维码后自动连接至本机' },
+                { label: LABEL.ajServerLan, detail: '本机主动连接至 AutoJs6 (服务端模式), 输入设备 IP 地址或域名' },
+                { label: LABEL.ajServerAdb, detail: '本机通过 USB (ADB) 连接至 AutoJs6 (服务端模式)' },
+            ],
+        });
+        if (typeof picked !== 'object') return;
+        switch (picked.label) {
+            case LABEL.ajClientLan:
+                return this.connectToLocalHint(interfaces);
+            case LABEL.ajClientQr:
+                return this.showQrCode();
+            case LABEL.ajServerLan:
+                return this.connectToServerLanFlow();
+            case LABEL.ajServerAdb:
+                return this.connectByAdb();
+        }
+    }
+
+    private async connectToLocalHint(interfaces: util.NIDetails[]) {
+        if (!this.devices.isListening) {
+            throw new DeviceError(`端口 ${Settings.serverPort} 未在监听 (可能被其他窗口占用), 请修改 autojs6.server.port 或使用其他连接方式`);
+        }
+        if (interfaces.length === 0) {
+            throw new DeviceError('未找到可用的局域网 IP 地址');
+        }
+        const ni = await pickNetworkInterface(interfaces);
+        if (ni) {
+            vscode.window.showInformationMessage(`在 AutoJs6 侧拉菜单开启客户端模式并连接至 ${ni.ip4}:${this.devices.listeningPort}`, '显示二维码')
+                .then(choice => choice && this.showQrCode(ni.ip4));
+        }
+    }
+
+    async showQrCode(preferredIp?: string) {
+        if (!this.devices.isListening) {
+            throw new DeviceError(`端口 ${Settings.serverPort} 未在监听 (可能被其他窗口占用), 请修改 autojs6.server.port 或使用其他连接方式`);
+        }
+        await QrCodePanel.show(this.context, this.devices.listeningPort, util.getBasicNetworkInterfaces(), typeof preferredIp === 'string' ? preferredIp : undefined);
+    }
+
+    private async connectToServerLanFlow() {
+        const records = this.loadRecords();
+        const items: vscode.QuickPickItem[] = records.map(r => ({
+            label: `${PREFIX.record} - ${r.ip}`,
+            detail: r.ts ? `最近连接: ${util.formatTimestamp(r.ts)}` : undefined,
+        }));
+        if (records.length > 0) {
+            items.push({ label: LABEL.recordClear, detail: '清除保存在本地的全部 IP 地址记录' });
+        }
+        const picked = await showPick({
+            title: '连接到 AutoJs6 服务端',
+            placeholder: `输入 IP 地址或域名 (可带端口, 默认 ${Settings.clientPort}), 按回车 (Enter) 键建立连接`,
+            items,
+            acceptInput: true,
+        });
+        if (picked === undefined) return;
+        if (typeof picked === 'object') {
+            if (picked.label === LABEL.recordClear) {
+                if (await confirm('确认清除所有已保存的记录吗')) {
+                    this.saveRecords([]);
+                    vscode.window.showInformationMessage(`清理完成, 共计 ${records.length} 项`);
+                }
+                return;
+            }
+            return this.connectToServerLan(picked.label.replace(`${PREFIX.record} - `, ''));
+        }
+        return this.connectToServerLan(picked);
+    }
+
+    async connectToServerLan(input: string) {
+        const endpoint = parseEndpoint(input, Settings.clientPort);
+        if (!endpoint) {
+            throw new DeviceError(`连接 AutoJs6 服务端失败, 无法解析地址 "${input}"`);
+        }
+        const target = this.createLanTarget(endpoint.host, endpoint.port);
+        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `正在连接至 AutoJs6 服务端 (${endpoint.host}:${endpoint.port})...` }, async () => {
+            try {
+                await this.devices.connectTo(target);
+            } catch (e) {
+                if (e instanceof DeviceError && e.device) {
+                    vscode.window.showWarningMessage(e.message);
+                    return;
+                }
+                logError(e);
+                showErrorWithAction(`无法连接至 AutoJs6 服务端 (${endpoint.host}:${endpoint.port}): ${(e as Error).message}`, '查看解决方案', () => {
+                    vscode.window.showInformationMessage('AutoJs6 服务端连接诊断', {
+                        modal: true,
+                        detail: [
+                            '检查 AutoJs6 主页侧拉抽屉是否已开启 "服务端模式"',
+                            '检查两端设备是否位于同一局域网',
+                            `检查 AutoJs6 所在设备的防火墙是否允许 ${endpoint.port} 端口通信`,
+                            '尝试使用其他方式 (如 ADB 或二维码) 建立连接',
+                        ].map(s => `- ${s}`).join('\n'),
+                    });
+                });
+            }
         });
     }
 
+    private createLanTarget(host: string, port: number): ConnectionTarget {
+        return { type: ConnectionType.SERVER_LAN, host, port };
+    }
+
+    private createAdbTarget(adbDeviceId: string, label?: string): ConnectionTarget {
+        return {
+            type: ConnectionType.SERVER_ADB,
+            host: IP_LOOP_BACK,
+            port: 0,
+            adbDeviceId,
+            label,
+            prepare: async () => {
+                // Fail fast (and cheaply) while the device is unplugged or unauthorized. zh-CN: 设备未连接/未授权时快速失败.
+                const info = this.adb.listDevices().find(d => d.id === adbDeviceId);
+                if (!info) {
+                    throw new DeviceError(`ADB 设备 ${adbDeviceId} 未连接`);
+                }
+                if (info.state !== 'device') {
+                    throw new DeviceError(`ADB 设备 ${adbDeviceId} 状态为 ${info.state}`);
+                }
+                this.releaseAdbForwardById(adbDeviceId);
+                const localPort = await findFreePort();
+                this.adb.forward(adbDeviceId, localPort, Settings.clientPort);
+                this.adbForwards.set(adbDeviceId, [ localPort ]);
+                return { host: IP_LOOP_BACK, port: localPort };
+            },
+            cleanup: () => this.releaseAdbForwardById(adbDeviceId),
+        };
+    }
+
+    private async connectByAdb() {
+        let devices: AdbDeviceInfo[];
+        try {
+            devices = this.adb.listDevices();
+        } catch (e) {
+            if (e instanceof AdbNotFoundError) {
+                showErrorWithAction('ADB 可能未安装或未被正确配置, 可在设置 autojs6.adb.path 中指定 adb 路径', '打开设置', () => {
+                    vscode.commands.executeCommand('workbench.action.openSettings', 'autojs6.adb.path');
+                });
+                return;
+            }
+            throw e;
+        }
+        const online = devices.filter(d => d.state === 'device');
+        if (online.length === 0) {
+            const offline = devices.filter(d => d.state !== 'device');
+            throw new DeviceError(offline.length > 0
+                ? `未发现可用的 ADB 设备 (${offline.map(d => `${d.id}: ${d.state}`).join(', ')}), 请在设备上确认 USB 调试授权`
+                : '未发现通过 ADB 连接的设备');
+        }
+        const picked = await showPick({
+            title: '连接到 AutoJs6 服务端 (ADB)',
+            placeholder: '选择需要连接的设备, 按回车 (Enter) 键建立连接',
+            items: online.map(d => ({ label: d.name, detail: `型号: ${d.model}, 产品名称: ${d.product}`, adb: d })),
+        });
+        if (typeof picked !== 'object') return;
+        const dev = picked.adb;
+        const target = this.createAdbTarget(dev.id, dev.name);
+        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `正在通过 ADB 连接至 ${dev.name}...` }, async () => {
+            try {
+                await this.devices.connectTo(target);
+            } catch (e) {
+                if (e instanceof DeviceError && e.device) {
+                    vscode.window.showWarningMessage(e.message);
+                    return;
+                }
+                logError(e);
+                vscode.window.showErrorMessage(`无法通过 ADB 连接至 ${dev.name}: ${(e as Error).message}. 请确认 AutoJs6 侧拉菜单已开启 "服务端模式 (Server mode)"`);
+            }
+        });
+    }
+
+    private releaseAdbForward(device: Device) {
+        const id = device.connectionTarget?.adbDeviceId;
+        if (id) this.releaseAdbForwardById(id);
+    }
+
+    private releaseAdbForwardById(adbDeviceId: string) {
+        const ports = this.adbForwards.get(adbDeviceId);
+        if (!ports) return;
+        this.adbForwards.delete(adbDeviceId);
+        ports.forEach(p => this.adb.removeForward(adbDeviceId, p));
+    }
+
+    /* Commands. zh-CN: 命令. */
+
+    viewDocument() {
+        vscode.env.openExternal(Uri.parse('https://docs.autojs6.com/'));
+    }
+
+    disconnectAll() {
+        const count = this.devices.devices.length;
+        const reconnecting = this.devices.reconnectSessions.length;
+        this.devices.devices.forEach(d => d.connectionTarget && this.forgetTarget(d.connectionTarget));
+        this.devices.reconnectSessions.forEach(s => this.forgetTarget(s.target));
+        this.devices.disconnectAll('user');
+        vscode.window.showInformationMessage(count > 0 || reconnecting > 0
+            ? `AutoJs6 已断开所有连接 (${count})${reconnecting > 0 ? `, 并停止 ${reconnecting} 个重连` : ''}`
+            : 'AutoJs6 当前没有已建立的连接');
+    }
+
+    /** Retry pending reconnects now, or restore the last targets when nothing is pending. zh-CN: 立即重试重连, 无重连时恢复上次连接. */
+    reconnect() {
+        const sessions = this.devices.reconnectSessions;
+        if (sessions.length > 0) {
+            sessions.forEach(s => this.devices.retryNow(s.key));
+            vscode.window.showInformationMessage(`AutoJs6: 正在重试 ${sessions.map(s => describeTarget(s.target)).join(', ')}`);
+            return;
+        }
+        const targets = this.loadTargets().filter(t => !this.devices.hasTarget(this.toConnectionTarget(t)));
+        if (targets.length === 0) {
+            vscode.window.showInformationMessage('AutoJs6: 没有可恢复的连接记录');
+            return;
+        }
+        targets.forEach(t => this.devices.startReconnect(this.toConnectionTarget(t), '手动恢复', true));
+        vscode.window.showInformationMessage(`AutoJs6: 正在重新连接 ${targets.map(t => describeTarget(this.toConnectionTarget(t))).join(', ')}`);
+    }
+
+    cancelReconnect() {
+        const sessions = this.devices.reconnectSessions;
+        if (sessions.length === 0) {
+            vscode.window.showInformationMessage('AutoJs6: 当前没有进行中的重连');
+            return;
+        }
+        this.devices.cancelReconnect();
+        vscode.window.showInformationMessage(`AutoJs6: 已停止重连 ${sessions.map(s => describeTarget(s.target)).join(', ')}`);
+    }
+
+    async disconnectDevice(arg?: { device?: Device }) {
+        let targets: Device[] | undefined;
+        if (arg && arg.device instanceof Device) {
+            targets = [ arg.device ];
+        } else {
+            targets = await this.pickDevices('选择需要断开的设备');
+        }
+        targets?.forEach(d => d.disconnect());
+    }
+
+    async selectDevice() {
+        const devices = this.devices.devices;
+        const sessions = this.devices.reconnectSessions;
+        if (devices.length === 0 && sessions.length === 0) {
+            return this.connect();
+        }
+        type Item = vscode.QuickPickItem & { device?: Device; session?: ReconnectSession; action?: string };
+        const items: Item[] = devices.map(d => ({ label: d.toString(), description: `AutoJs6 ${d.versionName} | 协议 v${d.protocolVersion}`, device: d }));
+        sessions.forEach(s => items.push({
+            label: `$(sync~spin) 重连中: ${describeTarget(s.target)}`,
+            description: `第 ${s.attempts + 1} 次${s.lastError ? ` | ${s.lastError}` : ''}`,
+            session: s,
+        }));
+        items.push({ label: '$(add) 建立新连接', action: 'connect' });
+        const picked = await showPick<Item>({
+            title: 'AutoJs6 设备',
+            placeholder: '选择设备以查看操作',
+            items,
+        });
+        if (typeof picked !== 'object') return;
+        if (picked.action === 'connect') {
+            return this.connect();
+        }
+        if (picked.session) {
+            const session = picked.session;
+            const choice = await showPick({
+                title: describeTarget(session.target),
+                items: [
+                    { label: '$(refresh) 立即重试', action: 'retry' },
+                    { label: '$(close) 停止重连', action: 'cancel' },
+                ],
+            });
+            if (typeof choice !== 'object') return;
+            if (choice.action === 'retry') {
+                this.devices.retryNow(session.key);
+            } else {
+                this.devices.cancelReconnect(session.key);
+            }
+            return;
+        }
+        const device = picked.device!;
+        const action = await showPick({
+            title: device.toString(),
+            items: [
+                { label: '$(output) 显示日志', action: 'log' },
+                { label: '$(play) 运行当前脚本', action: 'run' },
+                { label: '$(save) 保存当前脚本到此设备', action: 'save' },
+                { label: '$(folder) 浏览设备文件', action: 'browse' },
+                { label: '$(debug-disconnect) 断开连接', action: 'disconnect' },
+            ],
+        });
+        if (typeof action !== 'object') return;
+        switch (action.action) {
+            case 'log':
+                this.channels.get(device.deviceId)?.show(true);
+                break;
+            case 'run':
+                this.runOn([ device ]);
+                break;
+            case 'save':
+                this.saveOn([ device ]);
+                break;
+            case 'browse':
+                await vscode.commands.executeCommand('extension.remoteFiles.browse');
+                break;
+            case 'disconnect':
+                device.disconnect();
+                break;
+        }
+    }
+
+    run(urlOrArgs?: string | Uri) {
+        this.runOn(this.connectedDevicesOrThrow(), Extension.refinePath(urlOrArgs));
+    }
+
+    runWithoutArguments() {
+        this.run(undefined);
+    }
+
+    async runOnDevice(urlOrArgs?: string | Uri) {
+        const devices = await this.pickDevices('选择运行脚本的设备');
+        if (devices) this.runOn(devices, Extension.refinePath(urlOrArgs));
+    }
+
+    stop(urlOrArgs?: string | Uri) {
+        const fsPath = Extension.refinePath(urlOrArgs);
+        const id = fsPath || this.lastActiveEditor?.document.fileName;
+        if (!id) {
+            throw new DeviceError('需在正在编辑的文件窗口中使用此命令');
+        }
+        this.devices.sendCommand('stop', { id }, this.connectedDevicesOrThrow());
+    }
+
     stopAll() {
-        this.client.sendCommand('stopAll');
+        this.devices.sendCommand('stopAll', {}, this.connectedDevicesOrThrow());
     }
 
-    rerunProject(url?: string) {
-        this.stopAll();
-        setTimeout(() => this.runProject(url), 480);
-    }
-
-    rerun(url?: string) {
-        this.stop();
-        this.run(url);
-    }
-
-    runOnDevice() {
-        this.selectDevices((devices: Device[]) => this.runFileOn(devices));
+    rerun(urlOrArgs?: string | Uri) {
+        this.stop(urlOrArgs);
+        setTimeout(() => {
+            try {
+                this.run(urlOrArgs);
+            } catch (e) {
+                this.reportError('rerun', e as Error);
+            }
+        }, 300);
     }
 
     save() {
-        this.saveTo(this.client.devices);
+        this.saveOn(this.connectedDevicesOrThrow());
     }
 
-    saveToDevice() {
-        this.selectDevices((devices: Device[]) => this.saveTo(devices));
-    }
-
-    saveTo(devices: Device[]) {
-        let editor = vscode.window.activeTextEditor;
-        if (editor) {
-            devices.forEach((device) => {
-                device.sendCommand('save', {
-                    id: editor.document.fileName,
-                    name: this.getEditorFileName(editor),
-                    script: editor.document.getText(),
-                });
-            });
-        }
+    async saveToDevice() {
+        const devices = await this.pickDevices('选择保存脚本的设备');
+        if (devices) this.saveOn(devices);
     }
 
     newUntitledFile() {
         vscode.commands.executeCommand('workbench.action.files.newUntitledFile');
     }
 
-    newProject() {
-        vscode.window.showOpenDialog({
-            canSelectFiles: false,
-            canSelectFolders: true,
-        }).then((uris) => {
-            if ((uris || []).length > 0) {
-                let template = path.join(this.context.extensionPath, 'assets', 'template');
-                return new ProjectTemplate(vscode.Uri.file(template), uris[0]).build();
-            }
-        }).then((outUri: Uri) => {
-            if (outUri) {
-                this.replacePlaceholders(outUri);
-                vscode.commands.executeCommand('vscode.openFolder', outUri, { forceNewWindow: true });
-            }
-        });
+    async newProject(urlOrArgs?: string | Uri) {
+        let target = Extension.refinePath(urlOrArgs);
+        if (!target || !fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
+            const uris = await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, openLabel: '选择项目目录' });
+            if (!uris || uris.length === 0) return;
+            target = uris[0].fsPath;
+        }
+        const template = path.join(this.context.extensionPath, 'assets', 'template');
+        const outUri = new ProjectTemplate(Uri.file(template), Uri.file(target)).build();
+        this.replacePlaceholders(outUri);
+        vscode.commands.executeCommand('vscode.openFolder', outUri, { forceNewWindow: true });
     }
 
-    private replacePlaceholders(uri: vscode.Uri) {
+    private replacePlaceholders(uri: Uri) {
         try {
-            let uriFsPath = uri.fsPath;
-            let baseName = path.basename(uriFsPath);
-            let projectJsonPath = path.join(uriFsPath, 'project.json');
-
-            // 包名规范化逻辑
-            const normalizedPackageSuffix = this.generatePackageNameSuffix(baseName);
-
-            // 读取并替换占位符
-            let readString = fs.readFileSync(projectJsonPath, { encoding: 'utf8' })
+            const baseName = path.basename(uri.fsPath);
+            const projectJsonPath = path.join(uri.fsPath, 'project.json');
+            const content = fs.readFileSync(projectJsonPath, 'utf8')
                 .replace(/%PROJECT_NAME_PLACEHOLDER%/g, baseName)
-                .replace(/%PACKAGE_SUFFIX_PLACEHOLDER%/g, normalizedPackageSuffix);
-
-            fs.writeFileSync(projectJsonPath, readString, { encoding: 'utf8' });
+                .replace(/%PACKAGE_SUFFIX_PLACEHOLDER%/g, Extension.packageNameSuffix(baseName));
+            fs.writeFileSync(projectJsonPath, content, 'utf8');
         } catch (e) {
-            logDebug('Error while replacing placeholders: ', e);
+            logError('failed to replace placeholders:', e);
         }
     }
 
-    // 用于生成规范的包名后缀
-    private generatePackageNameSuffix(name: string): string {
-        // 如果名称包含中文字符，转成 ASCII 拼音
-        if (/[\u4e00-\u9fff]/.test(name)) {
-            name = pinyin(name, {
-                style: pinyin.STYLE_NORMAL, // 输出普通拼音，不带声调
-                heteronym: false, // 禁用多音字
-            }).join('');
+    static packageNameSuffix(name: string): string {
+        if (/[一-鿿]/.test(name)) {
+            name = (pinyin as any)(name, { style: (pinyin as any).STYLE_NORMAL, heteronym: false }).join('');
         }
-
-        // 替换所有非字母数字的字符为 "_"
-        name = name.replace(/\W+/g, '_');
-
-        // 如果包名以数字开头，加上 `app_` 前缀
-        if (/^\d/.test(name)) {
-            name = `app_${name}`;
-        }
-
-        // 转换为全小写
+        name = name.replace(/\W+/g, '_').replace(/^_+|_+$/g, '');
+        if (!name) name = 'app';
+        if (/^\d/.test(name)) name = `app_${name}`;
         return name.toLowerCase();
     }
 
-    runProject(url?: string | Uri) {
-        this.sendProjectCommand('run_project', this.getRefinedUrl(url));
+    private async sendProjectCommand(command: ProjectCommand, urlOrArgs?: string | Uri, force = false) {
+        let folder = Extension.refinePath(urlOrArgs);
+        if (!folder) {
+            const editorUri = this.lastActiveEditor?.document.uri;
+            const workspaceFolder = (editorUri && vscode.workspace.getWorkspaceFolder(editorUri)) || vscode.workspace.workspaceFolders?.[0];
+            if (!workspaceFolder) {
+                throw new DeviceError('需要一个已打开的 AutoJs6 项目');
+            }
+            folder = workspaceFolder.uri.fsPath;
+        }
+        const resolved = resolveProjectDir(folder);
+        if (resolved.error) {
+            throw new DeviceError(resolved.error);
+        }
+        folder = resolved.dir;
+        if (!this.project || this.project.projectDir !== folder) {
+            this.project?.dispose();
+            this.project = new Project(folder);
+            this.devices.setProjectFilter(this.project.fileFilter);
+        }
+        const devices = this.connectedDevicesOrThrow();
+        const count = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: `AutoJs6: 同步项目 ${path.basename(folder)}` },
+            () => this.devices.sendProjectCommand(folder!, command, devices, force));
+        logDebug(`${command} "${folder}" sent to ${count} device(s)`);
+    }
+
+    runProject(urlOrArgs?: string | Uri) {
+        return this.sendProjectCommand('run_project', urlOrArgs);
     }
 
     runProjectWithoutArguments() {
-        this.runProject(undefined);
+        return this.runProject(undefined);
     }
 
-    saveProject(url?: string | Uri) {
-        this.sendProjectCommand('save_project', this.getRefinedUrl(url));
+    saveProject(urlOrArgs?: string | Uri) {
+        return this.sendProjectCommand('save_project', urlOrArgs);
     }
 
     saveProjectWithoutArguments() {
-        this.saveProject(undefined);
+        return this.saveProject(undefined);
     }
 
-    commandsHierarchy() {
-        this.showCommandHierarchy();
+    /** Force a full re-upload, e.g. after files were removed on the device (issue #29). zh-CN: 强制全量重新同步 (issue #29). */
+    async resyncProject(urlOrArgs?: string | Uri) {
+        if (await confirm('确认重新完整同步项目吗', '将向设备发送项目全部文件并覆盖同名文件')) {
+            return this.sendProjectCommand('save_project', urlOrArgs, true);
+        }
     }
 }
+
+function findFreePort(): Promise<number> {
+    return new Promise((resolve, reject) => {
+        const server = net.createServer();
+        server.unref();
+        server.on('error', reject);
+        server.listen(0, IP_LOOP_BACK, () => {
+            const port = (server.address() as net.AddressInfo).port;
+            server.close(() => resolve(port));
+        });
+    });
+}
+
+let extension: Extension | null = null;
 
 // noinspection JSUnusedGlobalSymbols
 export function activate(context: vscode.ExtensionContext) {
-    extensionDebugChannel = vscode.window.createOutputChannel('AutoJs6 VSCode Extension Debug');
-    logDebug(`extension "${EXTENSION_NAME}" is activating`);
-    extension = new Extension(context, this);
+    const debugChannel = vscode.window.createOutputChannel('AutoJs6 VSCode Extension Debug');
+    context.subscriptions.push(debugChannel);
+    initLogger(debugChannel, () => Settings.debugLog);
+    logDebug(`extension "${EXTENSION_NAME}" is activating on ${os.platform()} ${os.release()}`);
+    extension = new Extension(context);
+    context.subscriptions.push(extension);
     logDebug(`extension "${EXTENSION_NAME}" is now active`);
 }
 
-export function logDebug(message?: any, ...optionalParams: any[]) {
-    if (extensionDebugChannel) {
-        let fullMessage = String(message);
-        if (optionalParams.length > 0) {
-            fullMessage.trimEnd();
-            fullMessage += ` ${optionalParams.map(param => typeof param === 'object' ? JSON.stringify(param) : String(param)).join(' ')}`;
-        }
-        extensionDebugChannel.appendLine(fullMessage);
-    }
+// noinspection JSUnusedGlobalSymbols
+export function deactivate() {
+    extension?.dispose();
+    extension = null;
 }
-
-export type ProjectCommands = 'run_project' | 'save_project';
-
-new AJHttpServer(HTTP_SERVER_PORT)
-    .on('cmd', (cmd: keyof Extension, ...params) => {
-        logDebug(`Received cmd: ${cmd}`);
-        switch (cmd) {
-            case 'rerunProject':
-                extension.stopAll();
-                setTimeout(() => extension.run(...params), 1e3);
-                break;
-            default:
-                if (!Extension.commands.includes(cmd)) {
-                    vscode.window.showErrorMessage(`接收到未知指令 "${cmd}"`);
-                    return;
-                }
-                logDebug(`执行接收到的指令 "${cmd}"`);
-                extension[cmd]['call'](extension, ...params);
-        }
-    })
-    .on('error', (e) => {
-        logDebug(`HTTP server error: ${e}`);
-    });
