@@ -2,6 +2,7 @@
 .vscode/**
 .vscode-test/**
 .idea/**
+.internal/**
 out/test/**
 out/**/*.map
 src/**
@@ -9,10 +10,14 @@ src/**
 node_modules/typescript/**
 node_modules/@types/**
 node_modules/@sm003/autojs6-dts/**
+node_modules/vsce/**
 tsconfig.json
 vsc-extension-quickstart.md
+roadmap.md
+sync.ffs_db
 *.vsix
 *.bak
-*.js
+/*.js
+/*.ts
 token.txt
 package-lock.json

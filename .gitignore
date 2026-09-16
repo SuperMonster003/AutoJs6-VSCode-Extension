@@ -6,6 +6,7 @@
 /.idea
 
 /*.js
+/*.ts
 
 *.vsix
 *.bak
