@@ -1,105 +1,122 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as crypto from 'crypto';
 import * as vscode from 'vscode';
-import * as archiver from 'archiver';
-import * as streamBuffers from 'stream-buffers';
-
 import { Uri } from 'vscode';
-import { FileObserver, FileFilter } from './diff';
-import { awaiter } from './awaiter';
-import { logDebug } from './extension';
+import { FileFilter } from './diff';
+import { logDebug, logError } from './logger';
 
+/**
+ * Copies the bundled project template into a target folder without overwriting existing files.
+ * zh-CN: 将内置项目模板复制到目标目录, 不覆盖已存在的文件.
+ */
 export class ProjectTemplate {
-    private readonly templateUri: Uri;
-    private readonly outUri: Uri;
 
-    constructor(templateUri: Uri, uri: Uri) {
-        this.templateUri = templateUri;
-        this.outUri = uri;
+    constructor(private readonly templateUri: Uri, private readonly outUri: Uri) {
     }
 
-    build() {
-        return awaiter(function* () {
-            const uri = this.outUri;
-            yield this.copyDirIfNotExists(this.templateUri.fsPath, this.outUri.fsPath);
-            return uri;
-        }.bind(this));
+    build(): Uri {
+        ProjectTemplate.copyDirIfNotExists(this.templateUri.fsPath, this.outUri.fsPath);
+        return this.outUri;
     }
 
-    copyDirIfNotExists(from: string, to: string) {
-        return awaiter(function* () {
-            const files = fs.readdirSync(from);
-            files.forEach((file) => awaiter(function* () {
-                const source = path.join(from, file);
-                const target = path.join(to, file);
-                if ((fs.statSync(source)).isDirectory()) {
-                    this.copyDirIfNotExists(source, target).catch(function (e: Error) {
-                        vscode.window.showErrorMessage(e.message);
-                    });
-                } else if (!fs.existsSync(target)) {
-                    const dir = path.dirname(target);
-                    if (!fs.existsSync(dir)) {
-                        fs.mkdirSync(dir, { recursive: true });
-                    }
-                    fs.copyFileSync(source, target);
-                }
-            }.bind(this)));
-        }.bind(this));
+    static copyDirIfNotExists(from: string, to: string) {
+        fs.mkdirSync(to, { recursive: true });
+        for (const file of fs.readdirSync(from)) {
+            const source = path.join(from, file);
+            const target = path.join(to, file);
+            if (fs.statSync(source).isDirectory()) {
+                ProjectTemplate.copyDirIfNotExists(source, target);
+            } else if (!fs.existsSync(target)) {
+                fs.copyFileSync(source, target);
+            }
+        }
     }
 }
 
-export class Project {
-    config: ProjectConfig;
-    projectDirUri: Uri;
-    projectDir: string;
+export class ProjectConfig {
+    name = '';
+    main = 'main.js';
+    versionCode = 1;
+    versionName = '1.0.0';
+    ignore: string[] = [];
 
-    private watcher: vscode.FileSystemWatcher;
+    static fromJsonFile(jsonPath: string): ProjectConfig {
+        const text = fs.readFileSync(jsonPath, 'utf8');
+        const config = Object.assign(new ProjectConfig(), JSON.parse(text)) as ProjectConfig;
+        config.ignore = Array.isArray(config.ignore) ? config.ignore : [];
+        return config;
+    }
+}
 
-    constructor(projectDirUri: Uri) {
-        this.projectDirUri = projectDirUri;
-        let projectDir = this.projectDir = projectDirUri.fsPath;
-
-        if (!fs.statSync(projectDir).isDirectory()) {
-            if (path.basename(projectDir) !== 'project.json') {
-                vscode.window.showErrorMessage(`项目初始化路径 "${projectDir}" 需为目录`);
-                return Object.create(null);
+/**
+ * Resolve the project directory for a folder or a `project.json` path; `null` when invalid.
+ * zh-CN: 由目录或 project.json 路径解析项目目录, 无效时返回 null.
+ */
+export function resolveProjectDir(fsPath: string): { dir: string; error?: string } {
+    let dir = fsPath;
+    try {
+        if (!fs.statSync(dir).isDirectory()) {
+            if (path.basename(dir) !== 'project.json') {
+                return { dir, error: `项目路径 "${dir}" 需为目录` };
             }
-            projectDir = path.dirname(projectDir);
+            dir = path.dirname(dir);
         }
+    } catch (e) {
+        return { dir, error: `项目路径 "${dir}" 不存在` };
+    }
+    const jsonPath = path.join(dir, 'project.json');
+    if (!fs.existsSync(jsonPath)) {
+        return { dir, error: `缺少必要的项目配置文件: ${jsonPath}` };
+    }
+    return { dir };
+}
 
-        let jsonPath = path.join(projectDir, 'project.json');
-        if (!fs.existsSync(jsonPath)) {
-            vscode.window.showErrorMessage(`缺少必要的项目配置文件: ${jsonPath}`);
-            return Object.create(null);
-        }
+export class Project implements vscode.Disposable {
+    config: ProjectConfig;
+    readonly projectDir: string;
+    private readonly watcher: vscode.FileSystemWatcher;
+    private ignoreRealPaths: string[] = [];
 
+    constructor(projectDir: string) {
+        this.projectDir = projectDir;
+        const jsonPath = path.join(projectDir, 'project.json');
         this.config = ProjectConfig.fromJsonFile(jsonPath);
-        this.watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(projectDir, 'project\.json'));
-        this.watcher.onDidChange((event) => {
-            logDebug('file changed: ', event.fsPath);
-            if (event.fsPath === path.join(projectDir, 'project.json')) {
-                this.config = ProjectConfig.fromJsonFile(event.fsPath);
-                logDebug('project.json changed: ', this.config);
+        this.refreshIgnore();
+        this.watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(projectDir, 'project.json'));
+        this.watcher.onDidChange(() => {
+            try {
+                this.config = ProjectConfig.fromJsonFile(jsonPath);
+                this.refreshIgnore();
+                logDebug('project.json reloaded:', this.config);
+            } catch (e) {
+                logError('failed to reload project.json:', e);
             }
         });
     }
 
-    // noinspection JSUnusedLocalSymbols
-    fileFilter(relativePath: string, absPath: string, stats: fs.Stats): boolean {
-        // 解析真实路径
-        const realAbsPath = fs.realpathSync(absPath);
-        return this.config.ignore.filter((p) => {
-            const fullPath = path.join(this.projectDir, p);
-            // 同样解析 ignore 路径对应的真实路径
+    private refreshIgnore() {
+        this.ignoreRealPaths = this.config.ignore.map((p) => {
+            const full = path.join(this.projectDir, p);
             try {
-                const realFullPath = fs.realpathSync(fullPath);
-                return realAbsPath.startsWith(realFullPath);
-            } catch (err) {
-                // 出现错误时忽略该 ignore 配置
-                return false;
+                return fs.realpathSync(full);
+            } catch (e) {
+                return path.normalize(full);
             }
-        }).length === 0;
+        });
+    }
+
+    fileFilter: FileFilter = (relativePath: string, absPath: string) => {
+        if (this.ignoreRealPaths.length === 0) {
+            return true;
+        }
+        let real = absPath;
+        try {
+            real = fs.realpathSync(absPath);
+        } catch (e) {
+            /* Keep the original path. zh-CN: 保留原路径. */
+        }
+        const candidates = real === absPath ? [ real ] : [ real, path.normalize(absPath) ];
+        return !this.ignoreRealPaths.some(ignored => candidates.some(c => c === ignored || c.startsWith(ignored + path.sep)));
     };
 
     dispose() {
@@ -107,126 +124,4 @@ export class Project {
     }
 }
 
-export class ProjectObserver {
-    folder: string;
-    private isDiffed: boolean;
-    private fileObserver: FileObserver;
-    private fileFilter: FileFilter;
-
-    constructor(folder: string, filter: FileFilter) {
-        this.isDiffed = false;
-        this.folder = folder;
-        this.fileFilter = filter;
-        this.fileObserver = new FileObserver(folder, filter);
-    }
-
-    diff() {
-        return this.fileObserver.walk()
-            .then((fileChanges) => {
-                const zip = archiver('zip');
-                const streamBuffer = new streamBuffers.WritableStreamBuffer();
-                zip.pipe(streamBuffer);
-                fileChanges.modified.forEach((relativePath: string) => {
-                    zip.append(fs.createReadStream(path.join(this.folder, relativePath)), { name: relativePath });
-                });
-                zip.finalize();
-                return new Promise<{ buffer: Buffer, deletedFiles: string[] }>((resolve) => {
-                    zip.on('finish', () => {
-                        streamBuffer.end();
-                        resolve({
-                            buffer: streamBuffer.getContents() as Buffer,
-                            deletedFiles: fileChanges.deleted,
-                        });
-                    });
-                });
-            })
-            .then((result) => {
-                let md5 = crypto.createHash('md5').update(result.buffer).digest('hex');
-                let isDiffed = this.isDiffed;
-                this.isDiffed = true;
-                logDebug(Array.from(result.buffer).map(x => x >= 128 ? x - 256 : x).join(','));
-                return {
-                    buffer: result.buffer,
-                    md5: md5,
-                    deletedFiles: result.deletedFiles,
-                    full: isDiffed,
-                };
-            });
-    }
-}
-
-export class LaunchConfig {
-    private displaySplash: boolean;
-    private hideLogs: boolean;
-    private splashText: string;
-    private stableMode: boolean;
-
-    constructor() {
-        this.displaySplash = true;
-        this.hideLogs = false;
-        this.splashText = 'Powered by AutoJs6';
-        this.stableMode = false;
-    }
-}
-
-export class ProjectConfig {
-    name: string;
-    versionCode: number;
-    versionName: string;
-    ignore: string[];
-    launchConfig: LaunchConfig;
-    private optimization: Optimization;
-    private encryptLevel: number;
-    private useFeatures: string[];
-    private scriptConfigs: Map<any, any>;
-    private assets: string[];
-
-    constructor() {
-        this.versionCode = 1;
-        this.versionName = '1.0.0';
-        this.launchConfig = new LaunchConfig();
-        this.encryptLevel = 0;
-        this.assets = [];
-        this.useFeatures = [];
-        this.optimization = new Optimization();
-        this.scriptConfigs = new Map();
-    }
-
-    save(path: string) {
-        return new Promise((res, rej) => {
-            const json = JSON.stringify(this, null, 4);
-            fs.writeFile(path, json, function (err) {
-                if (err) {
-                    rej(err);
-                    return;
-                }
-                res(path);
-            });
-        });
-    }
-
-    static fromJsonFile(path: string): ProjectConfig {
-        const text = fs.readFileSync(path).toString('utf-8');
-        const config = JSON.parse(text) as ProjectConfig;
-        config.ignore = (config.ignore || []);
-        return config;
-    }
-
-    static fromJson(text: string) {
-        const config = JSON.parse(text);
-        config.ignore = (config.ignore || []).map((p: string) => path.normalize(p));
-        return config;
-    }
-}
-
-class Optimization {
-    private removeOpenCv: boolean;
-    private unusedResources: boolean;
-    private removeAccessibilityService: boolean;
-
-    constructor() {
-        this.removeOpenCv = false;
-        this.unusedResources = false;
-        this.removeAccessibilityService = false;
-    }
-}
+export { ProjectObserver, ProjectDiffResult } from './sync';
