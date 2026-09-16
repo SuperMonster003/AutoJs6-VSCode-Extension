@@ -22,7 +22,7 @@
         "onStartupFinished",
         "onFileSystem:autojs6fs"
     ],
-    "main": "./out/extension.js",
+    "main": "./dist/extension.js",
     "contributes": {
         "breakpoints": [
             {
@@ -762,9 +762,11 @@
         }
     },
     "scripts": {
-        "vscode:prepublish": "npm run compile",
+        "vscode:prepublish": "npm run bundle",
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
+        "bundle": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node18 --minify --legal-comments=none",
+        "bundle-dev": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node18 --sourcemap",
         "test": "npm run compile && node --test \"out/test/**/*.test.js\"",
         "package": "vsce package",
         "publish": "vsce publish"
@@ -776,14 +778,15 @@
         "@types/qrcode": "^1.5.6",
         "@types/stream-buffers": "^3.0.2",
         "@types/vscode": "^1.75.1",
+        "esbuild": "^0.28.2",
         "typescript": "^5.3.3",
         "vsce": "^2.15.0"
     },
     "dependencies": {
         "archiver": "^3.0.0",
-        "pinyin": "^2.11.0",
+        "bonjour-service": "^1.4.4",
         "qrcode": "^1.5.4",
         "stream-buffers": "^3.0.2",
-        "systeminformation": "^5.23.12"
+        "tiny-pinyin": "^1.3.2"
     }
 }

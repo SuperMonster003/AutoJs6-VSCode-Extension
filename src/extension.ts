@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { Memento, TextEditor, Uri } from 'vscode';
-import * as pinyin from 'pinyin';
+import * as tinyPinyin from 'tiny-pinyin';
 
 import * as util from './util';
 import { Adb, AdbDeviceInfo, AdbNotFoundError } from './adb';
@@ -963,7 +963,7 @@ export class Extension implements vscode.Disposable {
 
     static packageNameSuffix(name: string): string {
         if (/[一-鿿]/.test(name)) {
-            name = (pinyin as any)(name, { style: (pinyin as any).STYLE_NORMAL, heteronym: false }).join('');
+            name = tinyPinyin.convertToPinyin(name, '', true);
         }
         name = name.replace(/\W+/g, '_').replace(/^_+|_+$/g, '');
         if (!name) name = 'app';

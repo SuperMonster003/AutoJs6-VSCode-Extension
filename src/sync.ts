@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as archiver from 'archiver';
+import archiver = require('archiver');
 import * as streamBuffers from 'stream-buffers';
 import { FileFilter, FileObserver } from './diff';
 import { logDebug } from './logger';
