@@ -41,23 +41,40 @@
     "app_version": "6.8.0",
     "app_version_code": 5280,
     "device_id": "<android id>",
-    "protocol_version": 2          // 6.8.0+ 携带; 缺省视为 1
+    "protocol_version": 2,         // 6.8.0+ 携带; 缺省视为 1
+    "features": [ "heartbeat", "request", "fs", "bye", "fs.chunked", "pairing" ],  // 6.8.0+ 声明的能力
+    "qr_token": "k3JxPzQ2mA9d"     // 可选, 扫描插件二维码连接时回传的一次性配对令牌 (见 3.1)
 } }
 
 // 插件 -> AutoJs6
 { "id": 1, "type": "hello", "data": {
     "extensionVersion": "1.1.0",   // AutoJs6 客户端模式要求 >= VSCODE_EXT_REQUIRED_VERSION
     "protocolVersion": 2,          // 缺省视为 1
-    "features": [ "heartbeat", "request", "fs", "bye" ],
+    "features": [ "heartbeat", "request", "fs", "bye", "fs.chunked", "pairing" ],
     "name": "DESKTOP-PC",          // 可选, 计算机名 (AutoJs6 管理器中展示)
     "platform": "win32",           // 可选, 插件所在平台
-    "errorMessage": "..."          // 可选, 携带时 AutoJs6 断开并展示该信息
+    "errorMessage": "...",         // 可选, 携带时 AutoJs6 断开并展示该信息
+    "pending": true                // 可选, 插件正在询问用户是否允许该设备连接 (见 3.1), 之后还会再发一次 hello
 } }
 ```
 
 * 插件侧 `handshakeTimeout` (默认 6 s) 内未收到 `hello` 则断开; AutoJs6 侧握手超时 6.4 s.
 * 版本检查: 插件要求 `app_version_code >= requiredClientVersionCode`; AutoJs6 (客户端模式) 要求 `extensionVersion >= VSCODE_EXT_REQUIRED_VERSION`.
 * 协议版本协商: 双方取各自声明版本, 新特性 (心跳, 请求/响应) 仅在对端 `>= 2` 时启用, 以保持向下兼容.
+* 能力声明: `features` 列出对端可用的扩展能力 (`fs.chunked` 分块读写, `pairing` 配对确认); 缺省视为仅具备 v1/v2 基础能力.
+
+### 3.1 配对 (Pairing, 插件 1.1.0+ / AutoJs6 6.8.0+)
+
+仅适用于 **AutoJs6 客户端模式** (设备主动连接插件). 插件收到 `hello` 后按顺序判断:
+
+1. `qr_token` 有效 (由插件二维码签发, 10 分钟内且仅可使用一次): 直接接受并将 `device_id` 加入已信任列表.
+2. `device_id` 已在信任列表: 直接接受.
+3. 其他: 先回复 `{ "type": "hello", "data": { ..., "pending": true } }` (仅当对端声明 `pairing`), 然后弹窗询问用户 "允许并记住 / 仅本次允许 / 拒绝" (90 s 无响应视为拒绝).
+   * 允许: 再发送一次正常 `hello` (不含 `pending`), 之后握手完成, 心跳开始.
+   * 拒绝: 发送带 `errorMessage` 的 `hello` 并关闭连接; AutoJs6 不会自动重连.
+
+AutoJs6 收到 `pending` 后保持 "连接中" 状态并提示 "等待 VSCode 端确认", 不触发握手超时. 插件的 "管理已信任设备 (Manage Trusted Devices)" 命令可移除信任;
+`autojs6.server.confirmUnknownDevices` 为 `false` 时跳过询问 (仍会记录扫码信任).
 
 ## 4. 命令 (v1)
 
@@ -149,12 +166,12 @@ AutoJs6 -> 插件:
 
 | method | params | result |
 |---|---|---|
-| `sys.info` | - | `{ appVersion, appVersionCode, protocolVersion, deviceName, sdk, workingDir, externalStorage }` |
+| `sys.info` | - | `{ appVersion, appVersionCode, protocolVersion, features, deviceName, sdk, workingDir, externalStorage }` |
 | `fs.roots` | - | `{ workingDir, externalStorage, roots: [ { name, path } ] }` |
 | `fs.list` | `{ path }` | `{ path, entries: [ { name, path, type: "file" \| "directory", size, mtime } ] }` |
 | `fs.stat` | `{ path }` | `{ path, exists, type?, size?, mtime? }` |
-| `fs.read` | `{ path, encoding?: "utf8" \| "base64" }` | `{ path, size, encoding, content }` (最大 32 MB) |
-| `fs.write` | `{ path, content, encoding?, create?, overwrite?, mkdirs? }` | `{ path, size, mtime }` |
+| `fs.read` | `{ path, encoding?: "utf8" \| "base64", offset?, length? }` | `{ path, size, offset, length, eof, encoding, content }` (单次最大 32 MB; `size` 为文件总长, 见 6.1) |
+| `fs.write` | `{ path, content, encoding?, create?, overwrite?, mkdirs?, append? }` | `{ path, size, written, mtime }` (`append` 需文件已存在, 见 6.1) |
 | `fs.mkdir` | `{ path }` | `{ path }` |
 | `fs.delete` | `{ path, recursive? }` | `{ path }` |
 | `fs.rename` | `{ path, newPath, overwrite? }` | `{ path }` |
@@ -162,15 +179,23 @@ AutoJs6 -> 插件:
 
 错误信息以英文短语开头, 插件据此映射为 VSCode 文件系统错误: `Not found`, `Already exists`, `Is a directory`, `Not a directory`, `Access denied`.
 
+### 6.1 分块传输 (`fs.chunked`, AutoJs6 6.8.0+)
+
+对端声明 `fs.chunked` 时, 插件对超过 1 MiB 的文件按 1 MiB 分块并显示可取消的进度:
+
+* 读取: 先 `fs.stat` 取 `size`, 再循环 `fs.read { offset, length }` 直到响应 `eof: true` (或返回 0 字节); `offset`/`length` 之一存在即视为分块读取.
+* 写入: 首块 `fs.write { append: false, overwrite, create }` 覆盖 / 创建文件, 后续块 `append: true` 追加 (此时不再检查 `overwrite`); 取消时设备上的文件可能不完整.
+
 ## 7. 二维码 (QR Code)
 
 插件生成的二维码内容:
 
 ```
-autojs6://connect?host=192.168.1.5&port=6347&name=MY-PC&alt=10.0.0.5:6347&v=2
+autojs6://connect?host=192.168.1.5&port=6347&name=MY-PC&alt=10.0.0.5:6347&v=2&token=k3JxPzQ2mA9d
 ```
 
 AutoJs6 (6.8.0+) 客户端模式地址输入框的扫码按钮解析 `host` 与 `port` 并直接连接; 纯文本 `host[:port]` 亦可识别.
+`token` 为插件签发的一次性配对令牌 (10 分钟内有效, 二维码刷新时更新), AutoJs6 6.8.0+ 在随后的 `hello` 中以 `qr_token` 回传, 插件校验通过后直接信任该设备 (见 3.1).
 
 ## 8. HTTP 命令桥
 
@@ -216,3 +241,15 @@ sock.on('data', (chunk) => {
     }
 });
 ```
+
+## 10. 局域网发现 (mDNS, AutoJs6 6.8.0+)
+
+AutoJs6 服务端模式开启且 "局域网发现 (mDNS)" 打开时, 通过 Android NSD 注册服务:
+
+```
+类型: _autojs6._tcp.     实例名: AutoJs6 <型号>     端口: 7347
+TXT:  v=<应用版本>  p=<协议版本>  n=<设备名>  id=<设备 ID>
+```
+
+插件 "客户端模式 | 局域网" 的连接列表使用 `bonjour-service` 浏览该类型, 发现的设备以 `[ 发现 ] - <设备名>` 列出 (地址为 A 记录 + SRV 端口).
+Windows 下通配 socket 的组播可能只经某一 (虚拟) 网卡发出, 因此插件会为每个 IPv4 接口分别打开一个浏览 socket. `autojs6.discovery.enabled` 可关闭发现.

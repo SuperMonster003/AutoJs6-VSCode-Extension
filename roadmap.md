@@ -35,7 +35,7 @@
 - [x] 1.7 增加 `npm test` (Node 内置 test runner) 覆盖帧解析/路径工具/QR payload 等纯逻辑
 - [x] 1.8 `tsconfig` 开启 `strict` 子集 (`noImplicitThis`, `strictBindCallApply`) 并修复类型问题
 - [ ] 1.9 全量国际化 (zh-CN / en), 所有用户可见字符串走 `i18n`
-- [ ] 1.10 使用 `esbuild` 打包以缩减 vsix 体积 (当前 9.6 MB, 主要来自 `systeminformation`/`pinyin`)
+- [x] 1.10 使用 `esbuild` 打包以缩减 vsix 体积 (9.6 MB → 0.96 MB; `tiny-pinyin` 与系统路由表探测替代 `pinyin` / `systeminformation`)
 
 ## 2. Bug 修复 (Fix)
 
@@ -66,14 +66,14 @@
 - [x] 3.7 网络接口过滤扩展 (Hyper-V `vEthernet`, VirtualBox, Docker, WSL 等) 并优先展示默认网关接口 (issue #12)
 - [x] 3.8 `[宿主]` Socket `keepAlive` / `tcpNoDelay`
 - [x] 3.9 `[宿主]` 客户端模式断线后自动重连 (`DevPluginClientReconnector`: 退避 2/4/8/16/30 s, 网络恢复时立即重试, 启动时恢复; 显式断开或 `bye(user)` 后不重连) 及客户端 / 服务端模式 "管理器" 对话框 (AutoJs6 #3, #333, #523)
-- [ ] 3.10 mDNS/局域网自动发现设备 (参考 Auto.js Pro `_autojsprodebug._tcp`)
+- [x] 3.10 mDNS/局域网自动发现设备 (`_autojs6._tcp`: 宿主 NSD 广播 (服务端管理器可开关), 插件 `bonjour-service` 逐接口浏览并列入局域网连接列表)
 
 ## 4. 二维码连接 (QR Code)
 
 - [x] 4.1 插件: `建立设备连接` 新增 "服务端模式 | 二维码" 入口, Webview 展示二维码 (payload: `autojs6://connect?host=<ip>&port=<port>&name=<pc>`), 可切换网络接口, 显示可复制的文本
 - [x] 4.2 `[宿主]` 客户端模式地址输入框增加扫码按钮, 调用摄像头扫描 (zxing-android-embedded), 解析 payload 后自动填入并连接; 同时兼容直接扫描 `host[:port]` 纯文本
 - [x] 4.3 `[宿主]` 扫码 Activity 处理摄像头运行时权限与横竖屏
-- [ ] 4.4 插件: 二维码携带一次性 token, 宿主握手回传, 插件校验后才接受连接 (防止误连)
+- [x] 4.4 插件: 二维码携带一次性 token, 宿主握手回传, 插件校验后才接受连接 (防止误连); 另含未知设备确认提示 (`pending` hello), 已信任设备列表与管理命令
 
 ## 5. 远程文件管理 (Remote Files)
 
@@ -84,7 +84,7 @@
 - [x] 5.5 `[双端]` `save` 保留相对目录 (issue #37): 插件发送相对工作区的 `path`, 宿主按目录保存 (老宿主回退为文件名)
 - [x] 5.6 插件: `重新完整同步项目 (Resync Project)` 命令, 强制全量覆盖
 - [ ] 5.7 双向同步: 设备端修改 → 拉回本地 (diff 预览)
-- [ ] 5.8 大文件分块传输与进度 (`withProgress`)
+- [x] 5.8 大文件分块传输与进度 (`withProgress`; `fs.read` offset/length + `fs.write` append, 1 MiB 分块, 能力 `fs.chunked`)
 
 ## 6. Issue 跟踪
 
@@ -169,4 +169,7 @@
 | VSCode `bye(shutdown)` / 服务端消失 → 宿主客户端模式 | 通过: 2 s 后开始重连, 服务端恢复后连上; 启动时恢复亦通过 |
 | 宿主管理器 "断开连接" / "断开所有客户端" → VSCode | 通过: VSCode 侧 `peerBye: user`, 不重连 |
 | 客户端 / 服务端管理器渲染与刷新 | 通过 (截图核对) |
-| 二维码扫描页 (连续对焦 + 闪光灯按钮) | 页面启动与闪光灯切换通过; 对焦效果待用户实测 |
+| 二维码扫描页 (连续对焦 + 闪光灯按钮) | 通过 (用户实测对焦体验良好) |
+| 配对 (2026-09-17): 未知设备 → `pending` hello → 允许 / 拒绝; 二维码令牌; 已信任设备直连 | 通过: 设备显示 "等待 VSCode 端确认", 允许后握手完成; 拒绝后设备收到 `errorMessage` 并关闭且不重连; 令牌被消费并记住设备; 再次连接无需确认 |
+| 分块传输 (2026-09-17): 3 MiB 随机文件分 3 块上传 / 下载 | 通过: 本机与设备 md5 一致, 上传 332 ms, 下载 187 ms (ADB 转发) |
+| mDNS (2026-09-17): 宿主 NSD 注册, 插件逐接口浏览 | 通过: 发现 `Sony XQ-DQ72 192.168.3.213:7347 v6.8.0 p2`; 通配 socket 在多网卡 Windows 上收不到应答, 已改为逐接口绑定 |

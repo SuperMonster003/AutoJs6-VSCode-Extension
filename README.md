@@ -46,8 +46,9 @@
 
 - 在 VSCode 中连接设备并操作 AutoJs6 的脚本或项目 (运行 / 停止 / 保存 等)
 - 在 VSCode 中实时显示 AutoJs6 的日志
-- 扫描二维码建立连接 (AutoJs6 6.8.0+)
-- 浏览, 编辑, 上传, 下载, 删除设备文件及运行设备脚本 (AutoJs6 6.8.0+)
+- 扫描二维码建立连接, 局域网内自动发现开启服务端模式的设备 (AutoJs6 6.8.0+)
+- 配对确认: 未知设备接入前询问, 扫码连接的设备自动信任, 可管理已信任设备
+- 浏览, 编辑, 上传, 下载, 删除设备文件及运行设备脚本, 大文件分块传输并显示进度 (AutoJs6 6.8.0+)
 - 心跳检测与自动重连, 状态栏设备指示器
 - 本地 HTTP 命令桥, 供外部工具触发插件命令
 
@@ -144,6 +145,8 @@
     - 立即重试正在重连的目标, 或恢复上次成功连接的设备 (局域网 / ADB)
 - 停止自动重连 (Cancel Reconnect)
     - 停止所有进行中的自动重连会话
+- 管理已信任设备 (Manage Trusted Devices)
+    - 查看并移除已信任的 AutoJs6 设备 (移除后该设备下次接入时需重新确认)
 - 选择设备 (Select Device)
     - 列出已连接设备并选择操作 (显示日志 / 运行 / 保存 / 浏览文件 / 断开), 也可点击状态栏指示器
 - 运行脚本 (Run) `[ F6 ]`
@@ -186,9 +189,11 @@
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
 | `autojs6.server.port` | `6347` | 插件监听端口 (AutoJs6 客户端模式连接目标) |
+| `autojs6.server.confirmUnknownDevices` | `true` | 未知设备 (客户端模式) 接入前先询问; 扫码连接或已选择 "允许并记住" 的设备无需确认 |
 | `autojs6.client.port` | `7347` | AutoJs6 服务端模式默认端口 |
 | `autojs6.http.enabled` / `autojs6.http.host` / `autojs6.http.port` | `true` / `127.0.0.1` / `10347` | 本地 HTTP 命令桥, 如 `http://127.0.0.1:10347/exec?cmd=run&path=...` |
 | `autojs6.adb.path` | 空 | adb 可执行文件路径或目录, 留空时自动探测 |
+| `autojs6.discovery.enabled` | `true` | 建立局域网连接时通过 mDNS (`_autojs6._tcp`) 搜索开启了服务端模式的 AutoJs6 6.8.0+ 设备 |
 | `autojs6.connection.connectTimeout` / `handshakeTimeout` | `8000` / `6000` | 连接与握手超时 (毫秒) |
 | `autojs6.connection.heartbeatInterval` / `heartbeatTimeout` | `15000` / `10000` | 心跳间隔与超时 (毫秒), 间隔为 0 时禁用 |
 | `autojs6.connection.autoReconnect` / `maxReconnectAttempts` | `true` / `0` | 插件主动连接意外断开后自动重连, 次数为 0 时不限 |
@@ -217,6 +222,9 @@
 * `新增` 通信协议 v2: 应用层心跳 (ping/pong) 检测半死连接, 插件主动连接 (局域网/ADB) 意外断开后自动重连 _[`issue #3`](http://vscext-project.autojs6.com/issues/3)_ _[`issue #13`](http://vscext-project.autojs6.com/issues/13)_
 * `新增` 自动重连会话: 意外断开后按指数退避持续重连 (默认 5 分钟, 可配置次数 / 时间窗 / 最大间隔), VSCode 重启后自动恢复上次连接 (`autojs6.connection.restoreOnStartup`); 新增 "重新连接上次的设备 (Reconnect)" 与 "停止自动重连 (Cancel Reconnect)" 命令, 状态栏显示重连进度
 * `新增` 断开通告 `bye`: 任一方显式断开连接时告知对端, 对端不再自动重连也不再于启动时恢复; VSCode 关闭时发送 `bye(shutdown)` 以便 AutoJs6 (6.8.0+) 稍后自动重连
+* `新增` 配对确认: 未知设备以客户端模式接入时先询问 "允许并记住 / 仅本次允许 / 拒绝", 扫描二维码连接的设备凭一次性令牌自动信任; 新增 "管理已信任设备 (Manage Trusted Devices)" 命令与 `autojs6.server.confirmUnknownDevices` 配置 (AutoJs6 6.8.0+ 会显示 "等待 VSCode 端确认" 提示)
+* `新增` 局域网发现 (mDNS): "客户端模式 | 局域网" 连接列表自动列出局域网内开启了服务端模式及 "局域网发现" 的 AutoJs6 6.8.0+ 设备, 可通过 `autojs6.discovery.enabled` 关闭
+* `新增` 大文件分块传输: 设备文件读写超过 1 MiB 时按 1 MiB 分块传输并显示可取消的进度 (AutoJs6 6.8.0+)
 * `新增` 状态栏设备指示器 (点击可快速选择设备执行运行/保存/查看日志/断开等操作)
 * `新增` 配置项 (`autojs6.*`): 监听端口, HTTP 命令服务地址与端口, adb 路径, 连接/握手/心跳超时, 自动重连, 日志面板行为, 保存时保留相对路径等
 * `新增` 连接地址支持域名与自定义端口 (`host:port`, `[ipv6]:port`) _[`issue #20`](http://vscext-project.autojs6.com/issues/20)_
@@ -235,6 +243,7 @@
 * `优化` 连接二维码降低模块密度 (更短载荷, 低纠错等级) 并提供尺寸滑块, 便于 AutoJs6 扫码对焦
 * `优化` 项目同步遍历时直接跳过 `ignore` 目录 (如 `node_modules`), 移除整包字节调试输出
 * `优化` 代码结构拆分为协议/设备/界面/远程文件/二维码等模块, 增加纯 Node.js 单元测试 (`npm test`)
+* `优化` 使用 esbuild 打包, vsix 体积由 9.6 MB 缩减至约 1 MB; 以 `tiny-pinyin` 与系统路由表探测替代 `pinyin` / `systeminformation` 依赖
 * `优化` README 补充端口说明与协议文档 `protocol.md` _[`issue #10`](http://vscext-project.autojs6.com/issues/10)_
 
 # v1.0.13
