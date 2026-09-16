@@ -16,9 +16,11 @@ import { CLOSE_REASON, ConnectionTarget, ConnectionType, describeTarget, Device,
 import { DeviceDiscovery } from './discovery';
 import { DeviceChannels, initLogger, logDebug, logError } from './logger';
 import { Project, ProjectTemplate, resolveProjectDir } from './project';
+import { applyPull, pickChanges } from './pull';
+import { planPull } from './pullCore';
 import { parseEndpoint, toPosixPath } from './protocol';
 import { QrCodePanel } from './qrcode';
-import { DeviceFilesTreeProvider, DevicesTreeProvider, REMOTE_SCHEME, RemoteFileCommands, RemoteFileSystemProvider } from './remoteFs';
+import { DeviceFilesTreeProvider, DevicesTreeProvider, REMOTE_SCHEME, RemoteFileCommands, RemoteFileSystemProvider, remoteUri } from './remoteFs';
 import { Settings } from './settings';
 import { confirm, pickNetworkInterface, showErrorWithAction, showMultiPick, showPick } from './ui';
 
@@ -151,7 +153,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
         'viewDocument', 'connect', 'disconnectAll', 'disconnectDevice', 'selectDevice', 'showQrCode',
         'run', 'runWithoutArguments', 'runOnDevice', 'stop', 'stopAll', 'rerun',
         'save', 'saveToDevice', 'newUntitledFile', 'newProject',
-        'runProject', 'runProjectWithoutArguments', 'saveProject', 'saveProjectWithoutArguments', 'resyncProject',
+        'runProject', 'runProjectWithoutArguments', 'saveProject', 'saveProjectWithoutArguments', 'resyncProject', 'pullProject',
         'reconnect', 'cancelReconnect', 'manageTrustedDevices',
     ];
 
@@ -347,7 +349,7 @@ export class Extension implements vscode.Disposable, PairingHandler {
     }
 
     private initViews() {
-        const fsProvider = new RemoteFileSystemProvider(this.devices);
+        const fsProvider = this.fsProvider = new RemoteFileSystemProvider(this.devices);
         const devicesTree = new DevicesTreeProvider(this.devices);
         const filesTree = new DeviceFilesTreeProvider(this.devices, fsProvider);
         this.context.subscriptions.push(
@@ -554,11 +556,26 @@ export class Extension implements vscode.Disposable, PairingHandler {
         return editor;
     }
 
+    private fsProvider!: RemoteFileSystemProvider;
+
     private connectedDevicesOrThrow(): Device[] {
         if (!this.devices.hasDevices()) {
             throw new DeviceError('未发现已连接的设备');
         }
         return this.devices.devices;
+    }
+
+    private async pickDevice(title: string): Promise<Device | undefined> {
+        const devices = this.connectedDevicesOrThrow();
+        if (devices.length === 1) {
+            return devices[0];
+        }
+        const picked = await showPick({
+            title,
+            placeholder: '选择一个设备',
+            items: devices.map(d => ({ label: d.toString(), description: `AutoJs6 ${d.versionName}`, device: d })),
+        });
+        return picked && typeof picked === 'object' ? picked.device : undefined;
     }
 
     private async pickDevices(title: string): Promise<Device[] | undefined> {
@@ -1143,7 +1160,8 @@ export class Extension implements vscode.Disposable, PairingHandler {
         return name.toLowerCase();
     }
 
-    private async sendProjectCommand(command: ProjectCommand, urlOrArgs?: string | Uri, force = false) {
+    /** Resolve the project folder of a command and (re)load its `project.json`. zh-CN: 解析命令对应的项目目录并 (重新) 加载 project.json. */
+    private prepareProject(urlOrArgs?: string | Uri): string {
         let folder = Extension.refinePath(urlOrArgs);
         if (!folder) {
             const editorUri = this.lastActiveEditor?.document.uri;
@@ -1163,9 +1181,14 @@ export class Extension implements vscode.Disposable, PairingHandler {
             this.project = new Project(folder);
             this.devices.setProjectFilter(this.project.fileFilter);
         }
+        return folder;
+    }
+
+    private async sendProjectCommand(command: ProjectCommand, urlOrArgs?: string | Uri, force = false) {
+        const folder = this.prepareProject(urlOrArgs);
         const devices = this.connectedDevicesOrThrow();
         const count = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: `AutoJs6: 同步项目 ${path.basename(folder)}` },
-            () => this.devices.sendProjectCommand(folder!, command, devices, force));
+            () => this.devices.sendProjectCommand(folder, command, devices, force));
         logDebug(`${command} "${folder}" sent to ${count} device(s)`);
     }
 
@@ -1190,6 +1213,32 @@ export class Extension implements vscode.Disposable, PairingHandler {
         if (await confirm('确认重新完整同步项目吗', '将向设备发送项目全部文件并覆盖同名文件')) {
             return this.sendProjectCommand('save_project', urlOrArgs, true);
         }
+    }
+
+    /**
+     * Pull files added or modified on the device back into the local project, with a per-file diff preview
+     * (roadmap 5.7). Files that only exist locally are reported, never deleted.
+     * zh-CN: 将设备端新增 / 修改的文件拉回本地项目, 支持逐文件差异预览 (roadmap 5.7). 仅本地存在的文件只做提示, 不会删除.
+     */
+    async pullProject(urlOrArgs?: string | Uri) {
+        const folder = this.prepareProject(urlOrArgs);
+        const name = path.basename(folder);
+        const device = await this.pickDevice(`选择要拉取项目 ${name} 变更的设备`);
+        if (!device) return;
+        const readRemote = (remotePath: string) => this.fsProvider.readFile(remoteUri(device, remotePath));
+        const plan = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: `正在比较项目 ${name} 与设备 ${device.name} 上的副本...` },
+            () => planPull(device, folder, this.project?.fileFilter || null, readRemote),
+        );
+        const missing = plan.missingOnDevice.length > 0 ? `; 本地另有 ${plan.missingOnDevice.length} 个文件在设备上不存在 (未处理)` : '';
+        if (plan.changes.length === 0) {
+            vscode.window.showInformationMessage(`设备 ${device.name} 上的项目 ${name} 与本地一致 (已比较 ${plan.scanned} 个文件${missing})`);
+            return;
+        }
+        const picked = await pickChanges(device, folder, plan);
+        if (!picked || picked.length === 0) return;
+        const count = await applyPull(device, folder, picked, readRemote);
+        vscode.window.showInformationMessage(`已从设备 ${device.name} 拉取 ${count} 个文件到项目 ${name}${missing}`);
     }
 }
 

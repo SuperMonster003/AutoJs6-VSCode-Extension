@@ -180,6 +180,11 @@
                 "category": "AutoJs6"
             },
             {
+                "command": "extension.pullProject",
+                "title": "从设备拉取项目变更 (Pull Project from Device)",
+                "category": "AutoJs6"
+            },
+            {
                 "command": "extension.runProject",
                 "title": "运行项目 (Run Project)",
                 "category": "AutoJs6",
@@ -351,6 +356,11 @@
                 {
                     "command": "extension.resyncProject",
                     "group": "navigation@88",
+                    "when": "explorerResourceIsFolder"
+                },
+                {
+                    "command": "extension.pullProject",
+                    "group": "navigation@89",
                     "when": "explorerResourceIsFolder"
                 },
                 {

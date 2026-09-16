@@ -124,6 +124,8 @@ export interface RemoteEntry {
     type: 'file' | 'directory';
     size: number;
     mtime: number;
+    /** Only in answers to `fs.list { hash: true }` (AutoJs6 6.8.0+, files up to 16 MB). zh-CN: 仅 `fs.list { hash: true }` 返回 (AutoJs6 6.8.0+, 不超过 16 MB 的文件). */
+    md5?: string;
 }
 
 export interface RemoteRoots {
