@@ -12,7 +12,8 @@ import * as tinyPinyin from 'tiny-pinyin';
 
 import * as util from './util';
 import { Adb, AdbDeviceInfo, AdbNotFoundError } from './adb';
-import { CLOSE_REASON, ConnectionTarget, ConnectionType, describeTarget, Device, DeviceCommandParam, DeviceError, Devices, ProjectCommand, ReconnectSession, targetKey } from './device';
+import { CLOSE_REASON, ConnectionTarget, ConnectionType, describeTarget, Device, DeviceCommandParam, DeviceError, Devices, PairingHandler, PairingVerdict, ProjectCommand, ReconnectSession, targetKey } from './device';
+import { DeviceDiscovery } from './discovery';
 import { DeviceChannels, initLogger, logDebug, logError } from './logger';
 import { Project, ProjectTemplate, resolveProjectDir } from './project';
 import { parseEndpoint, toPosixPath } from './protocol';
@@ -26,7 +27,6 @@ const IP_LOOP_BACK = '127.0.0.1';
 const IP_UNIVERSAL = '0.0.0.0';
 const STORAGE_KEY_RECORDS = 'autojs6.devices';
 const STORAGE_KEY_TARGETS = 'autojs6.lastTargets';
-const STORAGE_IP_BLACKLIST = [ IP_LOOP_BACK, IP_UNIVERSAL ];
 const STORAGE_KEY_TRUSTED = 'autojs6.trustedDevices';
 /** Lifetime of a QR pairing token. zh-CN: 二维码配对令牌有效期. */
 const QR_TOKEN_TTL_MS = 10 * 60_000;
@@ -34,9 +34,11 @@ const QR_TOKEN_TTL_MS = 10 * 60_000;
 const PAIRING_PROMPT_TIMEOUT_MS = 90_000;
 /** How long the LAN picker shows the busy indicator while browsing mDNS. zh-CN: 局域网选择器显示搜索状态的时长. */
 const DISCOVERY_BUSY_MS = 8_000;
+const STORAGE_IP_BLACKLIST = [ IP_LOOP_BACK, IP_UNIVERSAL ];
 
 const PREFIX = {
     connect: '[ 连接 ]',
+    discovered: '[ 发现 ]',
     clear: '[ 清理 ]',
     record: '[ 记录 ]',
     optional: '[ 可选 ]',
@@ -62,8 +64,6 @@ interface IpRecord {
 }
 
 /** A connection the extension initiated, persisted so it can be restored on startup. zh-CN: 插件主动建立的连接, 持久化以便启动时恢复. */
-interface SavedTarget {
-    type: ConnectionType;
 /** A device the person chose to remember (roadmap 4.4). zh-CN: 用户选择记住的设备 (roadmap 4.4). */
 interface TrustedDevice {
     name: string;
@@ -80,6 +80,8 @@ function lanItemMatches(item: vscode.QuickPickItem, value: string): boolean {
     return [ item.label, item.description, item.detail ].some(s => !!s && s.toLowerCase().includes(v));
 }
 
+interface SavedTarget {
+    type: ConnectionType;
     host: string;
     port: number;
     adbDeviceId?: string;
@@ -182,9 +184,9 @@ export class Extension implements vscode.Disposable, PairingHandler {
         this.disposables.push(Settings.onDidChange(() => this.onSettingsChanged()));
 
         this.startServers();
+        this.devices.pairing = this;
         this.restoreConnections();
     }
-        this.devices.pairing = this;
 
     /* Lifecycle. zh-CN: 生命周期. */
 
@@ -646,22 +648,69 @@ export class Extension implements vscode.Disposable, PairingHandler {
         await QrCodePanel.show(this.context, this.devices.listeningPort, util.getBasicNetworkInterfaces(), typeof preferredIp === 'string' ? preferredIp : undefined, () => this.issueQrToken());
     }
 
+    /**
+     * LAN connect picker: devices discovered via mDNS (roadmap 3.10) first, then saved records; typed input is
+     * accepted as `host[:port]`.
+     * zh-CN: 局域网连接选择器: 先列出 mDNS 发现的设备 (roadmap 3.10), 再列出历史记录; 也接受手动输入 `host[:port]`.
+     */
     private async connectToServerLanFlow() {
         const records = this.loadRecords();
         const recordItems: LanPickItem[] = records.map(r => ({
             label: `${PREFIX.record} - ${r.ip}`,
             detail: r.ts ? `最近连接: ${util.formatTimestamp(r.ts)}` : undefined,
+            endpoint: r.ip,
         }));
         if (records.length > 0) {
             recordItems.push({ label: LABEL.recordClear, detail: '清除保存在本地的全部 IP 地址记录', clear: true });
         }
-        const picked = await showPick({
-            title: '连接到 AutoJs6 服务端',
-            placeholder: `输入 IP 地址或域名 (可带端口, 默认 ${Settings.clientPort}), 按回车 (Enter) 键建立连接`,
-            endpoint: r.ip,
-            items,
-            acceptInput: true,
+        const discovery = Settings.discoveryEnabled ? new DeviceDiscovery() : null;
+        const searching: LanPickItem = {
+            label: '$(search) 正在搜索局域网内的 AutoJs6 设备...',
+            detail: '需 AutoJs6 6.8.0+ 开启服务端模式及其 "局域网发现" 选项; 也可直接输入地址',
+            alwaysShow: true,
+        };
+        const pick = vscode.window.createQuickPick<LanPickItem>();
+        pick.title = '连接到 AutoJs6 服务端';
+        pick.placeholder = `输入 IP 地址或域名 (可带端口, 默认 ${Settings.clientPort}), 按回车 (Enter) 键建立连接`;
+        pick.matchOnDescription = true;
+        pick.matchOnDetail = true;
+        pick.ignoreFocusOut = true;
+        const build = () => {
+            const found = discovery ? discovery.list() : [];
+            const items: LanPickItem[] = found.map(d => ({
+                label: `${PREFIX.discovered} - ${d.name}`,
+                description: `${d.host}:${d.port}`,
+                detail: `通过局域网发现 (mDNS)${d.version ? `, AutoJs6 ${d.version}` : ''}`,
+                endpoint: `${d.host}:${d.port}`,
+            }));
+            if (discovery && found.length === 0 && pick.busy) {
+                items.push(searching);
+            }
+            pick.items = items.concat(recordItems);
+        };
+        pick.busy = !!discovery;
+        build();
+        discovery?.start(() => build());
+        const busyTimer = setTimeout(() => {
+            pick.busy = false;
+            build();
+        }, DISCOVERY_BUSY_MS);
+        const picked = await new Promise<LanPickItem | string | undefined>((resolve) => {
+            pick.onDidAccept(() => {
+                const value = pick.value.trim();
+                const selected = pick.selectedItems[0];
+                if (value && (!selected || !lanItemMatches(selected, value))) {
+                    resolve(value);
+                } else if (selected && selected !== searching) {
+                    resolve(selected);
+                }
+            });
+            pick.onDidHide(() => resolve(undefined));
+            pick.show();
         });
+        clearTimeout(busyTimer);
+        discovery?.stop();
+        pick.dispose();
         if (picked === undefined) return;
         if (typeof picked === 'string') return this.connectToServerLan(picked);
         if (picked.clear) {
@@ -704,55 +753,6 @@ export class Extension implements vscode.Disposable, PairingHandler {
         });
     }
 
-    private createLanTarget(host: string, port: number): ConnectionTarget {
-        return { type: ConnectionType.SERVER_LAN, host, port };
-    }
-
-    private createAdbTarget(adbDeviceId: string, label?: string): ConnectionTarget {
-        return {
-            type: ConnectionType.SERVER_ADB,
-            host: IP_LOOP_BACK,
-            port: 0,
-            adbDeviceId,
-            label,
-            prepare: async () => {
-                // Fail fast (and cheaply) while the device is unplugged or unauthorized. zh-CN: 设备未连接/未授权时快速失败.
-                const info = this.adb.listDevices().find(d => d.id === adbDeviceId);
-                if (!info) {
-                    throw new DeviceError(`ADB 设备 ${adbDeviceId} 未连接`);
-                }
-                if (info.state !== 'device') {
-                    throw new DeviceError(`ADB 设备 ${adbDeviceId} 状态为 ${info.state}`);
-                }
-                this.releaseAdbForwardById(adbDeviceId);
-                const localPort = await findFreePort();
-                this.adb.forward(adbDeviceId, localPort, Settings.clientPort);
-                this.adbForwards.set(adbDeviceId, [ localPort ]);
-                return { host: IP_LOOP_BACK, port: localPort };
-            },
-            cleanup: () => this.releaseAdbForwardById(adbDeviceId),
-        };
-    }
-
-    private async connectByAdb() {
-        let devices: AdbDeviceInfo[];
-        try {
-            devices = this.adb.listDevices();
-        } catch (e) {
-            if (e instanceof AdbNotFoundError) {
-                showErrorWithAction('ADB 可能未安装或未被正确配置, 可在设置 autojs6.adb.path 中指定 adb 路径', '打开设置', () => {
-                    vscode.commands.executeCommand('workbench.action.openSettings', 'autojs6.adb.path');
-                });
-                return;
-            }
-            throw e;
-        }
-        const online = devices.filter(d => d.state === 'device');
-        if (online.length === 0) {
-            const offline = devices.filter(d => d.state !== 'device');
-            throw new DeviceError(offline.length > 0
-                ? `未发现可用的 ADB 设备 (${offline.map(d => `${d.id}: ${d.state}`).join(', ')}), 请在设备上确认 USB 调试授权`
-                : '未发现通过 ADB 连接的设备');
     /* Pairing (roadmap 4.4): QR tokens, trusted devices and the confirmation prompt. zh-CN: 配对: 二维码令牌 / 已信任设备 / 确认提示. */
 
     private readonly qrTokens = new Map<string, number>();
@@ -848,6 +848,55 @@ export class Extension implements vscode.Disposable, PairingHandler {
         vscode.window.showInformationMessage(`已移除 ${picked.length} 台设备的信任, 下次连接时将重新询问`);
     }
 
+    private createLanTarget(host: string, port: number): ConnectionTarget {
+        return { type: ConnectionType.SERVER_LAN, host, port };
+    }
+
+    private createAdbTarget(adbDeviceId: string, label?: string): ConnectionTarget {
+        return {
+            type: ConnectionType.SERVER_ADB,
+            host: IP_LOOP_BACK,
+            port: 0,
+            adbDeviceId,
+            label,
+            prepare: async () => {
+                // Fail fast (and cheaply) while the device is unplugged or unauthorized. zh-CN: 设备未连接/未授权时快速失败.
+                const info = this.adb.listDevices().find(d => d.id === adbDeviceId);
+                if (!info) {
+                    throw new DeviceError(`ADB 设备 ${adbDeviceId} 未连接`);
+                }
+                if (info.state !== 'device') {
+                    throw new DeviceError(`ADB 设备 ${adbDeviceId} 状态为 ${info.state}`);
+                }
+                this.releaseAdbForwardById(adbDeviceId);
+                const localPort = await findFreePort();
+                this.adb.forward(adbDeviceId, localPort, Settings.clientPort);
+                this.adbForwards.set(adbDeviceId, [ localPort ]);
+                return { host: IP_LOOP_BACK, port: localPort };
+            },
+            cleanup: () => this.releaseAdbForwardById(adbDeviceId),
+        };
+    }
+
+    private async connectByAdb() {
+        let devices: AdbDeviceInfo[];
+        try {
+            devices = this.adb.listDevices();
+        } catch (e) {
+            if (e instanceof AdbNotFoundError) {
+                showErrorWithAction('ADB 可能未安装或未被正确配置, 可在设置 autojs6.adb.path 中指定 adb 路径', '打开设置', () => {
+                    vscode.commands.executeCommand('workbench.action.openSettings', 'autojs6.adb.path');
+                });
+                return;
+            }
+            throw e;
+        }
+        const online = devices.filter(d => d.state === 'device');
+        if (online.length === 0) {
+            const offline = devices.filter(d => d.state !== 'device');
+            throw new DeviceError(offline.length > 0
+                ? `未发现可用的 ADB 设备 (${offline.map(d => `${d.id}: ${d.state}`).join(', ')}), 请在设备上确认 USB 调试授权`
+                : '未发现通过 ADB 连接的设备');
         }
         const picked = await showPick({
             title: '连接到 AutoJs6 服务端 (ADB)',
