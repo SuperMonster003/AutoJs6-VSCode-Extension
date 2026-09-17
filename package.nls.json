@@ -43,6 +43,8 @@
     "view.autojs6.deviceFiles.contextualTitle": "AutoJs6 Device Files",
     "viewsWelcome.autojs6.devices.contents": "No AutoJs6 device is connected yet.\n[Connect](command:extension.connect)\n[Show QR Code](command:extension.showQrCode)\n\nEnable \"Client mode\" or \"Server mode\" in the AutoJs6 drawer, then connect.",
     "viewsWelcome.autojs6.deviceFiles.contents": "Device files can be browsed here once a device is connected (AutoJs6 6.8.0 or later).\n[Connect](command:extension.connect)",
+    "config.autojs6.language.description": "Language of the extension's messages, pickers and views: follow VSCode's display language (auto), English or Simplified Chinese. Command titles and setting descriptions always follow VSCode. Reload the window after changing it so that everything is refreshed.",
+    "config.autojs6.language.enum.auto": "Follow VSCode's display language",
     "config.autojs6.server.port.description": "Port the extension listens on for AutoJs6 client mode.",
     "config.autojs6.server.confirmUnknownDevices.description": "Ask before accepting an unknown AutoJs6 device (client mode); devices that scanned the QR code or were remembered are accepted silently.",
     "config.autojs6.client.port.description": "Default port of AutoJs6 server mode.",

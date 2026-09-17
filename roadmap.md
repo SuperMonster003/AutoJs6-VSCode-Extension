@@ -34,7 +34,7 @@
 - [x] 1.6 `FileObserver.walk` 在遍历阶段即跳过 ignore 目录 (避免遍历 node_modules), 移除整包字节 dump 日志
 - [x] 1.7 增加 `npm test` (Node 内置 test runner) 覆盖帧解析/路径工具/QR payload 等纯逻辑
 - [x] 1.8 `tsconfig` 开启 `strict` 子集 (`noImplicitThis`, `strictBindCallApply`) 并修复类型问题
-- [x] 1.9 全量国际化 (zh-CN / en), 所有用户可见字符串走 `i18n` (2026-09-17: 源字符串改为英文并经 `vscode.l10n` 翻译, `l10n/bundle.l10n.zh-cn.json` 206 条与源码 `t()` 调用一一对应; `package.nls.json` / `package.nls.zh-cn.json` 覆盖命令标题, 视图, 欢迎页与配置说明; 无 `vscode` 时 `t()` 回退为英文源串)
+- [x] 1.9 全量国际化 (zh-CN / en), 所有用户可见字符串走 `i18n` (2026-09-17: 源字符串改为英文并经 `vscode.l10n` 翻译, `l10n/bundle.l10n.zh-cn.json` 206 条与源码 `t()` 调用一一对应; `package.nls.json` / `package.nls.zh-cn.json` 覆盖命令标题, 视图, 欢迎页与配置说明; 无 `vscode` 时 `t()` 回退为英文源串; 2026-09-17 补充: `autojs6.language` 配置 (`auto` / `en` / `zh-cn`) 可显式指定插件语言, 非 `auto` 时 `i18n.ts` 自行读取 `l10n/bundle.l10n.<lang>.json` 并绕过 `vscode.l10n`, 修改后提示重新加载窗口; 清单字符串仍由 VSCode 按显示语言解析)
 - [x] 1.10 使用 `esbuild` 打包以缩减 vsix 体积 (9.6 MB → 0.96 MB; `tiny-pinyin` 与系统路由表探测替代 `pinyin` / `systeminformation`)
 
 ## 2. Bug 修复 (Fix)

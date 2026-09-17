@@ -43,6 +43,8 @@
     "view.autojs6.deviceFiles.contextualTitle": "AutoJs6 设备文件",
     "viewsWelcome.autojs6.devices.contents": "尚未连接任何 AutoJs6 设备.\n[建立设备连接 (Connect)](command:extension.connect)\n[显示连接二维码 (QR Code)](command:extension.showQrCode)\n\n在 AutoJs6 侧拉菜单中开启 \"客户端模式\" 或 \"服务端模式\" 后建立连接.",
     "viewsWelcome.autojs6.deviceFiles.contents": "连接设备后可在此浏览设备文件 (需 AutoJs6 6.8.0 及以上版本).\n[建立设备连接 (Connect)](command:extension.connect)",
+    "config.autojs6.language.description": "插件界面文案 (消息, 选择列表, 视图等) 的语言: 跟随 VSCode 显示语言 (auto), English 或简体中文. 命令标题与配置说明始终跟随 VSCode 显示语言. 修改后请重新加载窗口以全面生效.",
+    "config.autojs6.language.enum.auto": "跟随 VSCode 显示语言",
     "config.autojs6.server.port.description": "插件监听端口, 供 AutoJs6 \"客户端模式\" 连接 (需与防火墙放行端口一致).",
     "config.autojs6.server.confirmUnknownDevices.description": "未知的 AutoJs6 设备 (客户端模式) 连接本机时先询问是否允许; 扫描本机二维码连接的设备, 以及已选择 \"允许并记住\" 的设备无需确认.",
     "config.autojs6.client.port.description": "AutoJs6 \"服务端模式\" 的默认端口 (局域网或 ADB 转发).",

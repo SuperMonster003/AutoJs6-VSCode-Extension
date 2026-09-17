@@ -666,6 +666,21 @@
         "configuration": {
             "title": "AutoJs6",
             "properties": {
+                "autojs6.language": {
+                    "type": "string",
+                    "enum": [
+                        "auto",
+                        "en",
+                        "zh-cn"
+                    ],
+                    "enumDescriptions": [
+                        "%config.autojs6.language.enum.auto%",
+                        "English",
+                        "简体中文"
+                    ],
+                    "default": "auto",
+                    "description": "%config.autojs6.language.description%"
+                },
                 "autojs6.server.port": {
                     "type": "number",
                     "default": 6347,

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ConnectionOptions } from './device';
 import { DEFAULT_CLIENT_PORT, DEFAULT_HTTP_PORT, DEFAULT_SERVER_PORT } from './protocol';
+import { Language, normalizeLanguage } from './i18n';
 
 /**
  * Typed accessors for `contributes.configuration` (section `autojs6`).
@@ -20,6 +21,11 @@ export class Settings {
         if (min !== undefined && value < min) value = min;
         if (max !== undefined && value > max) value = max;
         return value;
+    }
+
+    /** Display language of the extension's own strings; `auto` follows VSCode. zh-CN: 插件自身文案的语言, `auto` 跟随 VSCode. */
+    static get language(): Language {
+        return normalizeLanguage(Settings.config.get<string>('language', 'auto'));
     }
 
     /** Port the extension listens on for AutoJs6 client mode. zh-CN: 插件监听端口 (AutoJs6 客户端模式). */

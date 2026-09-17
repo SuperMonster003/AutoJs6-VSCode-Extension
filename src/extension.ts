@@ -23,7 +23,7 @@ import { QrCodePanel } from './qrcode';
 import { DeviceFilesTreeProvider, DevicesTreeProvider, REMOTE_SCHEME, RemoteFileCommands, RemoteFileSystemProvider, remoteUri } from './remoteFs';
 import { Settings } from './settings';
 import { confirm, pickNetworkInterface, showErrorWithAction, showMultiPick, showPick } from './ui';
-import { t } from './i18n';
+import { setLanguage, t } from './i18n';
 
 const EXTENSION_NAME = 'AutoJs6 VSCode Extension';
 const IP_LOOP_BACK = '127.0.0.1';
@@ -211,6 +211,18 @@ export class Extension implements vscode.Disposable, PairingHandler {
 
     private onSettingsChanged() {
         this.adb.invalidate();
+        if (setLanguage(Settings.language)) {
+            // Strings computed at activation (view titles, pick prefixes) only follow after a reload.
+            // zh-CN: 激活时已计算的字符串 (视图标题, 选择项前缀) 需重新加载窗口后才会切换.
+            vscode.window.showInformationMessage(
+                t('The display language of the AutoJs6 extension has changed. Reload the window to apply it everywhere.'),
+                t('Reload Window'),
+            ).then((choice) => {
+                if (choice) {
+                    vscode.commands.executeCommand('workbench.action.reloadWindow');
+                }
+            });
+        }
         if (this.devices.listeningPort !== Settings.serverPort || (!Settings.httpEnabled)) {
             this.httpServer.stop();
             this.startServers();
