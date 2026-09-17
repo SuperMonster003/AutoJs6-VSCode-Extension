@@ -47,13 +47,13 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
     }
 
     private static translate(e: any, uri: vscode.Uri): Error {
+        if (e instanceof vscode.FileSystemError) return e;
         const message = String(e?.message || e);
         if (/not found|no such|不存在/i.test(message)) return vscode.FileSystemError.FileNotFound(uri);
         if (/exists|已存在/i.test(message)) return vscode.FileSystemError.FileExists(uri);
         if (/is a directory|是目录/i.test(message)) return vscode.FileSystemError.FileIsADirectory(uri);
         if (/not a directory|不是目录/i.test(message)) return vscode.FileSystemError.FileNotADirectory(uri);
         if (/denied|拒绝/i.test(message)) return vscode.FileSystemError.NoPermissions(uri);
-        if (e instanceof vscode.FileSystemError) return e;
         return vscode.FileSystemError.Unavailable(message);
     }
 
