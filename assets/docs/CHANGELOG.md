@@ -9,6 +9,7 @@
 ###### 2026/09/16
 
 * `新增` 活动栏 "AutoJs6" 视图: "设备 (Devices)" 列表与 "设备文件 (Device Files)" 树, 支持浏览/打开/编辑/上传/下载/重命名/删除设备文件及运行设备脚本 (需 AutoJs6 6.8.0+)
+* `新增` 设备文件视图支持上传本地文件夹 (可多选), 保留子目录与空目录, 合并同名目录并覆盖同名文件, 支持进度提示与取消
 * `新增` 远程文件系统 `autojs6fs://`, 设备文件可直接在编辑器中打开并保存回设备; "浏览设备文件" 命令可将设备目录加入工作区
 * `新增` 二维码连接: "服务端模式 | 二维码" 显示本机连接二维码, AutoJs6 6.8.0+ 客户端模式扫码后自动连接 _[`issue #12`](http://vscext-project.autojs6.com/issues/12)_
 * `新增` 通信协议 v2: 应用层心跳 (ping/pong) 检测半死连接, 插件主动连接 (局域网/ADB) 意外断开后自动重连 _[`issue #3`](http://vscext-project.autojs6.com/issues/3)_ _[`issue #13`](http://vscext-project.autojs6.com/issues/13)_
