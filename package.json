@@ -260,6 +260,11 @@
                 "category": "AutoJs6"
             },
             {
+                "command": "extension.remoteFiles.uploadFolders",
+                "title": "%command.extension.remoteFiles.uploadFolders.title%",
+                "category": "AutoJs6"
+            },
+            {
                 "command": "extension.remoteFiles.download",
                 "title": "%command.extension.remoteFiles.download.title%",
                 "category": "AutoJs6",
@@ -420,6 +425,10 @@
                     "when": "false"
                 },
                 {
+                    "command": "extension.remoteFiles.uploadFolders",
+                    "when": "false"
+                },
+                {
                     "command": "extension.remoteFiles.download",
                     "when": "false"
                 },
@@ -540,9 +549,14 @@
                     "group": "3_transfer@2"
                 },
                 {
+                    "command": "extension.remoteFiles.uploadFolders",
+                    "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(root|directory)$/",
+                    "group": "3_transfer@3"
+                },
+                {
                     "command": "extension.remoteFiles.download",
                     "when": "view == autojs6.deviceFiles && viewItem =~ /^fs\\.(file|script)$/",
-                    "group": "3_transfer@3"
+                    "group": "3_transfer@4"
                 },
                 {
                     "command": "extension.remoteFiles.rename",

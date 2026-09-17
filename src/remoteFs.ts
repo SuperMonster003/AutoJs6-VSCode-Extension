@@ -148,11 +148,11 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
         });
     }
 
-    async writeFile(uri: vscode.Uri, content: Uint8Array, options: { create: boolean; overwrite: boolean }): Promise<void> {
+    async writeFile(uri: vscode.Uri, content: Uint8Array, options: { create: boolean; overwrite: boolean }, cancellationToken?: vscode.CancellationToken): Promise<void> {
         const device = this.device(uri);
         try {
             if (content.length > FS_CHUNK_SIZE && device.hasFeature(FEATURE.FS_CHUNKED)) {
-                await this.writeChunked(device, uri, Buffer.from(content), options);
+                await this.writeChunked(device, uri, Buffer.from(content), options, cancellationToken);
             } else {
                 await device.request('fs.write', {
                     path: uri.path,
@@ -173,13 +173,13 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
      * Write a large file in pieces: the first piece replaces the file, the following ones append (roadmap 5.8).
      * zh-CN: 分块写入大文件: 首块覆盖文件, 后续块追加 (roadmap 5.8).
      */
-    private async writeChunked(device: Device, uri: vscode.Uri, content: Buffer, options: { create: boolean; overwrite: boolean }): Promise<void> {
+    private async writeChunked(device: Device, uri: vscode.Uri, content: Buffer, options: { create: boolean; overwrite: boolean }, cancellationToken?: vscode.CancellationToken): Promise<void> {
         const name = remoteBasename(uri.path);
         const title = t('Writing {0} to {1} ({2})', name, device.name, formatSize(content.length));
         return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (progress, token) => {
             let reported = 0;
             for (let offset = 0; offset < content.length; offset += FS_CHUNK_SIZE) {
-                if (token.isCancellationRequested) {
+                if (token.isCancellationRequested || cancellationToken?.isCancellationRequested) {
                     throw new DeviceError(t('Writing {0} was cancelled (the file on the device may be incomplete)', name), device);
                 }
                 const chunk = content.subarray(offset, Math.min(content.length, offset + FS_CHUNK_SIZE));
@@ -420,6 +420,7 @@ export class RemoteFileCommands {
         reg('extension.remoteFiles.newFile', (node: EntryNode | RootNode) => this.newFile(node));
         reg('extension.remoteFiles.uploadCurrentFile', (node: EntryNode | RootNode) => this.uploadCurrentFile(node));
         reg('extension.remoteFiles.uploadFiles', (node: EntryNode | RootNode) => this.uploadFiles(node));
+        reg('extension.remoteFiles.uploadFolders', (node: EntryNode | RootNode) => this.uploadFolders(node));
         reg('extension.remoteFiles.download', (node: EntryNode) => this.download(node));
         reg('extension.remoteFiles.copyPath', (node: EntryNode | RootNode) => vscode.env.clipboard.writeText(node.path));
         reg('extension.remoteFiles.browse', () => this.browse());
@@ -493,6 +494,77 @@ export class RemoteFileCommands {
                 progress.report({ message: `${i + 1}/${uris.length} ${path.basename(local.fsPath)}`, increment: 100 / uris.length });
                 const content = await vscode.workspace.fs.readFile(local);
                 await this.fsProvider.writeFile(remoteUri(node.device, joinRemotePath(dir, path.basename(local.fsPath))), content, { create: true, overwrite: true });
+            }
+        });
+    }
+
+    private async uploadFolders(node: EntryNode | RootNode) {
+        const uris = await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: true, title: t('Upload Folders'), openLabel: t('Upload') });
+        if (!uris || uris.length === 0) return;
+        const dir = this.dirOf(node);
+        await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t('Uploading to {0}', String(node.device)), cancellable: true }, async (progress, token) => {
+            let skipped = 0;
+            const checkCancellation = () => {
+                if (token.isCancellationRequested) throw new vscode.CancellationError();
+            };
+            const upload = async (local: vscode.Uri, relativePath: string, type: vscode.FileType): Promise<void> => {
+                checkCancellation();
+                // Do not follow links: a directory can link back to itself or outside the selected folder.
+                // zh-CN: 不跟随链接, 避免目录循环或上传所选文件夹之外的内容.
+                if ((type & vscode.FileType.SymbolicLink) || (type !== vscode.FileType.Directory && type !== vscode.FileType.File)) {
+                    skipped++;
+                    logDebug('skipped folder upload entry:', local.toString());
+                    return;
+                }
+                progress.report({ message: relativePath });
+                const target = remoteUri(node.device, joinRemotePath(dir, relativePath));
+                if (type === vscode.FileType.Directory) {
+                    let existing: vscode.FileStat | undefined;
+                    try {
+                        existing = await this.fsProvider.stat(target);
+                    } catch (e) {
+                        if (!(e instanceof vscode.FileSystemError) || e.code !== 'FileNotFound') throw e;
+                    }
+                    checkCancellation();
+                    if (existing) {
+                        if (existing.type !== vscode.FileType.Directory) throw vscode.FileSystemError.FileNotADirectory(target);
+                    } else {
+                        // Create every directory, including empty ones. zh-CN: 创建所有目录, 包括空目录.
+                        await this.fsProvider.createDirectory(target);
+                    }
+                    checkCancellation();
+                    const entries = await vscode.workspace.fs.readDirectory(local);
+                    for (const [ name, entryType ] of entries) {
+                        await upload(vscode.Uri.joinPath(local, name), joinRemotePath(relativePath, name), entryType);
+                    }
+                } else {
+                    const content = await vscode.workspace.fs.readFile(local);
+                    checkCancellation();
+                    await this.fsProvider.writeFile(target, content, { create: true, overwrite: true }, token);
+                }
+            };
+            try {
+                for (const local of uris) {
+                    checkCancellation();
+                    const name = remoteBasename(local.path);
+                    if (!name) throw new DeviceError(t('Select a named folder instead of a file system root'));
+                    const { type } = await vscode.workspace.fs.stat(local);
+                    if (!(type & vscode.FileType.Directory)) throw vscode.FileSystemError.FileNotADirectory(local);
+                    await upload(local, name, type);
+                }
+                checkCancellation();
+            } catch (e) {
+                if (!token.isCancellationRequested) throw e;
+                vscode.window.showInformationMessage(t('Folder upload was cancelled (files already uploaded are kept on the device; the current file may be incomplete)'));
+                return;
+            } finally {
+                // Failed or cancelled writes can still leave files on the device. zh-CN: 失败或取消的写入也可能留下文件.
+                this.tree.refresh();
+            }
+            if (skipped > 0) {
+                vscode.window.showWarningMessage(t('Uploaded to {0}: {1} (skipped {2} symbolic links or unsupported entries)', String(node.device), dir, skipped));
+            } else {
+                vscode.window.showInformationMessage(t('Uploaded to {0}: {1}', String(node.device), dir));
             }
         });
     }

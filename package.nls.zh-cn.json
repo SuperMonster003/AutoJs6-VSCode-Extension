@@ -35,6 +35,7 @@
     "command.extension.remoteFiles.newFile.title": "新建文件",
     "command.extension.remoteFiles.uploadCurrentFile.title": "上传当前文件到此目录",
     "command.extension.remoteFiles.uploadFiles.title": "上传文件到此目录",
+    "command.extension.remoteFiles.uploadFolders.title": "上传文件夹到此目录",
     "command.extension.remoteFiles.download.title": "下载",
     "command.extension.remoteFiles.copyPath.title": "复制路径",
     "view.autojs6.devices.name": "设备",

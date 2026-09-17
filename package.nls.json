@@ -35,6 +35,7 @@
     "command.extension.remoteFiles.newFile.title": "New File",
     "command.extension.remoteFiles.uploadCurrentFile.title": "Upload Current File",
     "command.extension.remoteFiles.uploadFiles.title": "Upload Files",
+    "command.extension.remoteFiles.uploadFolders.title": "Upload Folders",
     "command.extension.remoteFiles.download.title": "Download",
     "command.extension.remoteFiles.copyPath.title": "Copy Path",
     "view.autojs6.devices.name": "Devices",
