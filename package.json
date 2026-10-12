@@ -824,7 +824,10 @@
         "bundle-dev": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node18 --sourcemap",
         "test": "npm run compile && node --test \"out/test/**/*.test.js\"",
         "package": "vsce package",
-        "publish": "vsce publish"
+        "publish": "vsce publish",
+        "docs:generate": "python .python/generate_markdown.py",
+        "docs:check": "python .python/generate_markdown.py --check",
+        "docs:test": "python -m unittest discover -s .python/tests"
     },
     "devDependencies": {
         "@sm003/autojs6-dts": "^2.0.0",

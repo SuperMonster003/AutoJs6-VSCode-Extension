@@ -1,0 +1,361 @@
+{
+  "labels": {
+    "hint": "Note",
+    "feature": "Fonctionnalité",
+    "fix": "Correction",
+    "improvement": "Amélioration",
+    "dependency": "Dépendance",
+    "compatibility": "Compatibilité",
+    "completion": "Complément",
+    "error": "Erreur",
+    "metrics": "Mesures",
+    "update": "Mise à jour",
+    "replacement": "Remplacement",
+    "management": "Gestion",
+    "precision": "Précision",
+    "simplification": "Simplification",
+    "constraint": "Contrainte",
+    "adjustment": "Ajustement"
+  },
+  "$data": {
+    "v1.1.0": {
+      "released_date": "2026/09/16",
+      "entries": [
+        {
+          "category": "feature",
+          "text": "Vue \"AutoJs6\" de la barre d'activité: liste \"Appareils (Devices)\" et arborescence \"Fichiers de l'appareil (Device Files)\", permettant de parcourir/ouvrir/modifier/téléverser/télécharger/renommer/supprimer les fichiers et d'exécuter les scripts de l'appareil (nécessite AutoJs6 6.8.0+)"
+        },
+        {
+          "category": "feature",
+          "text": "La vue des fichiers de l'appareil permet de téléverser plusieurs dossiers locaux, de conserver les sous-répertoires et répertoires vides, de fusionner les répertoires homonymes et d'écraser les fichiers homonymes, avec indication de progression et annulation"
+        },
+        {
+          "category": "feature",
+          "text": "Système de fichiers distant `autojs6fs://`: les fichiers de l'appareil peuvent être ouverts directement dans l'éditeur et enregistrés sur l'appareil; la commande \"Parcourir les fichiers de l'appareil\" permet d'ajouter un répertoire de l'appareil à l'espace de travail"
+        },
+        {
+          "category": "feature",
+          "text": "Connexion par code QR: \"Mode serveur | Code QR\" affiche le code QR de cet ordinateur; le mode client de AutoJs6 6.8.0+ se connecte automatiquement après le scan _[`issue #12`](http://vscext-project.autojs6.com/issues/12)_"
+        },
+        {
+          "category": "feature",
+          "text": "Les battements de coeur applicatifs du protocole de communication v2: (ping/pong) détectent les connexions à moitié ouvertes; reconnexion automatique après une déconnexion inattendue d'une connexion initiée par l'extension (réseau local/ADB) _[`issue #3`](http://vscext-project.autojs6.com/issues/3)_ _[`issue #13`](http://vscext-project.autojs6.com/issues/13)_"
+        },
+        {
+          "category": "feature",
+          "text": "Sessions de reconnexion automatique: tentatives avec temporisation exponentielle après une déconnexion inattendue (5 minutes par défaut, avec nombre de tentatives / fenêtre temporelle / intervalle maximal configurables), et rétablissement de la dernière connexion au redémarrage de VSCode (`autojs6.connection.restoreOnStartup`); ajout des commandes \"Reconnecter le dernier appareil (Reconnect)\" et \"Arrêter la reconnexion automatique (Cancel Reconnect)\", avec progression dans la barre d'état"
+        },
+        {
+          "category": "feature",
+          "text": "Notification de déconnexion `bye`: une déconnexion explicite d'un côté avertit l'autre, qui ne tente plus de reconnexion automatique ni de restauration au démarrage; la fermeture de VSCode envoie `bye(shutdown)` pour permettre à AutoJs6 (6.8.0+) de se reconnecter automatiquement plus tard"
+        },
+        {
+          "category": "feature",
+          "text": "Confirmation d'appairage: un appareil inconnu se connectant en mode client entraîne la demande \"Autoriser et mémoriser / Autoriser cette fois / Refuser\"; un jeton à usage unique permet d'approuver automatiquement les appareils connectés par code QR. Ajout de la commande \"Gérer les appareils approuvés (Manage Trusted Devices)\" et du paramètre `autojs6.server.confirmUnknownDevices` (AutoJs6 6.8.0+ affiche \"En attente de confirmation côté VSCode\")"
+        },
+        {
+          "category": "feature",
+          "text": "Découverte sur le réseau local (mDNS): la liste de connexion \"Mode client | Réseau local\" affiche automatiquement les appareils AutoJs6 6.8.0+ du réseau local dont le mode serveur et la \"Découverte sur le réseau local\" sont activés; désactivable avec `autojs6.discovery.enabled`"
+        },
+        {
+          "category": "feature",
+          "text": "Transfert par blocs des fichiers volumineux: les lectures et écritures de fichiers de l'appareil dépassant 1 MiB sont transférées par blocs de 1 MiB, avec progression et possibilité d'annulation (AutoJs6 6.8.0+)"
+        },
+        {
+          "category": "feature",
+          "text": "Commande \"Récupérer les modifications du projet depuis l'appareil (Pull Project from Device)\": comparaison du projet sur l'appareil avec le projet local, liste des fichiers ajoutés / modifiés sur l'appareil, aperçu des différences fichier par fichier puis sélection des fichiers à récupérer (AutoJs6 6.8.0+ compare avec `md5` de `fs.list`; les versions antérieures comparent le contenu)"
+        },
+        {
+          "category": "feature",
+          "text": "Internationalisation: les textes de l'interface suivent la langue d'affichage de VSCode (chinois simplifié / English); les commandes et descriptions des paramètres sont également localisées (vscode.l10n)"
+        },
+        {
+          "category": "feature",
+          "text": "Indicateur d'appareils dans la barre d'état (cliquer pour choisir rapidement un appareil et exécuter, enregistrer, consulter ses journaux, le déconnecter, etc.)"
+        },
+        {
+          "category": "feature",
+          "text": "Paramètres (`autojs6.*`): port d'écoute, adresse et port du service de commandes HTTP, chemin adb, délais de connexion/négociation/battements de coeur, reconnexion automatique, comportement du panneau de journaux, conservation des chemins relatifs à l'enregistrement, etc."
+        },
+        {
+          "category": "feature",
+          "text": "Les adresses de connexion acceptent les noms de domaine et les ports personnalisés (`host:port`, `[ipv6]:port`) _[`issue #20`](http://vscext-project.autojs6.com/issues/20)_"
+        },
+        {
+          "category": "feature",
+          "text": "Commande \"Resynchroniser entièrement le projet (Resync Project)\", forçant le remplacement complet du projet sur l'appareil _[`issue #29`](http://vscext-project.autojs6.com/issues/29)_"
+        },
+        {
+          "category": "fix",
+          "text": "Correction de l'échec d'activation de l'extension lorsque le port 6347/10347 est occupé (par exemple avec plusieurs fenêtres VSCode), qui provoquait \"not found\" pour toutes les commandes _[`issue #14`](http://vscext-project.autojs6.com/issues/14)_ _[`issue #15`](http://vscext-project.autojs6.com/issues/15)_"
+        },
+        {
+          "category": "fix",
+          "text": "Correction de la non-détection des appareils sous Linux / macOS due à l'analyse de la sortie de `adb devices` avec les fins de ligne Windows; ajout de la détection automatique du chemin adb (`ANDROID_HOME`, `ANDROID_SDK_ROOT`, répertoires d'installation courants) et du paramètre `autojs6.adb.path` _[`issue #35`](http://vscext-project.autojs6.com/issues/35)_"
+        },
+        {
+          "category": "fix",
+          "text": "Correction du drapeau `override` inversé dans la synchronisation incrémentale et des barres obliques inverses de `deletedFiles` sous Windows empêchant la suppression de fichiers sur l'appareil (nécessite AutoJs6 6.8.0+) _[`issue #29`](http://vscext-project.autojs6.com/issues/29)_"
+        },
+        {
+          "category": "fix",
+          "text": "Correction de la sélection du mauvais éditeur par les commandes \"Arrêter le script courant\" et \"Enregistrer\" lorsque le panneau de sortie a le focus"
+        },
+        {
+          "category": "fix",
+          "text": "Correction des exceptions dues à l'accès à une connexion détruite après expiration de la négociation ou déconnexion"
+        },
+        {
+          "category": "fix",
+          "text": "Correction de l'absence de gestion du panneau de sortie après déconnexion: les journaux sont conservés par défaut avec une indication de déconnexion; `autojs6.log.disposeChannelOnDisconnect` permet de le supprimer automatiquement _[`issue #30`](http://vscext-project.autojs6.com/issues/30)_"
+        },
+        {
+          "category": "fix",
+          "text": "Correction de la redirection de port qui n'était pas supprimée après la déconnexion de ADB"
+        },
+        {
+          "category": "fix",
+          "text": "Correction du faux message occasionnel \"Impossible de se reconnecter ..., les tentatives ont été arrêtées\" après une déconnexion inattendue (auparavant, abandon après 5 tentatives fixes, soit environ 31 s); le message d'échec apparaît désormais une seule fois à la fin de la fenêtre de reconnexion et propose \"Réessayer\" / \"Ne plus restaurer automatiquement\""
+        },
+        {
+          "category": "improvement",
+          "text": "Le chemin relatif à l'espace de travail est transmis lors de l'enregistrement/de l'exécution d'un fichier, et AutoJs6 6.8.0+ conserve l'arborescence dans son répertoire de travail _[`issue #37`](http://vscext-project.autojs6.com/issues/37)_"
+        },
+        {
+          "category": "improvement",
+          "text": "Le service de commandes HTTP écoute désormais uniquement sur `127.0.0.1` par défaut (auparavant `0.0.0.0`), pour empêcher d'autres hôtes du réseau local de déclencher des commandes sur cet ordinateur"
+        },
+        {
+          "category": "improvement",
+          "text": "La liste des interfaces réseau filtre les cartes virtuelles telles que Hyper-V / VirtualBox / Docker / WSL, et affiche en priorité l'interface de la passerelle par défaut _[`issue #12`](http://vscext-project.autojs6.com/issues/12)_"
+        },
+        {
+          "category": "improvement",
+          "text": "Réduction de la densité des modules du code QR de connexion (contenu plus court, faible correction d'erreurs) et ajout d'un curseur de taille pour faciliter la mise au point lors du scan avec AutoJs6"
+        },
+        {
+          "category": "improvement",
+          "text": "Le parcours de synchronisation du projet ignore directement les répertoires `ignore` (comme `node_modules`), et la sortie de débogage des octets du paquet complet est supprimée"
+        },
+        {
+          "category": "improvement",
+          "text": "Séparation du code en modules de protocole/appareils/interface/fichiers distants/codes QR, et ajout de tests unitaires en Node.js pur (`npm test`)"
+        },
+        {
+          "category": "improvement",
+          "text": "Empaquetage avec esbuild, réduisant la taille de vsix de 9.6 MB à environ 1 MB; remplacement des dépendances `pinyin` / `systeminformation` par `tiny-pinyin` et la détection via la table de routage du système"
+        },
+        {
+          "category": "improvement",
+          "text": "Ajout des explications sur les ports et de la documentation du protocole `protocol.md` dans README _[`issue #10`](http://vscext-project.autojs6.com/issues/10)_"
+        }
+      ]
+    },
+    "v1.0.13": {
+      "released_date": "2026/03/14",
+      "entries": [
+        {
+          "category": "improvement",
+          "text": "Refonte du protocole de trames Socket côté appareil: un en-tête binaire fixe de 8 octets (longueur int32BE + type) remplace l'ancien en-tête textuel"
+        },
+        {
+          "category": "improvement",
+          "text": "L'analyse du flux TCP utilise une boucle de découpage des trames fondée sur un tampon cumulatif, pour traiter plus fiablement les paquets partiels ou concaténés"
+        },
+        {
+          "category": "improvement",
+          "text": "Ajout de contrôles de validité des trames (type et longueur maximale) pour détecter rapidement une désynchronisation du protocole et éviter une croissance anormale de la mémoire"
+        },
+        {
+          "category": "improvement",
+          "text": "Suppression de la conversion intermédiaire inutile en chaîne lors de l'envoi de JSON et de données binaires"
+        }
+      ]
+    },
+    "v1.0.12": {
+      "released_date": "2025/04/14",
+      "entries": [
+        {
+          "category": "fix",
+          "text": "Correction de l'impossibilité de se connecter en mode serveur due à une vérification erronée de la version _[`issue #27`](http://vscext-project.autojs6.com/issues/27)_"
+        },
+        {
+          "category": "improvement",
+          "text": "Les nouveaux projets peuvent utiliser une tâche de script `dts-link` pour créer automatiquement un lien symbolique vers les [fichiers de déclaration AutoJs6](http://dts-project.autojs6.com/) _[`issue #8`](http://vscext-project.autojs6.com/issues/8)_"
+        }
+      ]
+    },
+    "v1.0.11": {
+      "released_date": "2025/04/14",
+      "entries": [
+        {
+          "category": "fix",
+          "text": "Correction des boutons d'exécution et d'enregistrement du projet dans la barre de menu de l'éditeur VSCode (Ref to [terwer](https://github.com/terwer)) _[`pr #25`](https://github.com/SuperMonster003/AutoJs6-VSCode-Extension/pull/25)_ _[`issue #26`](http://vscext-project.autojs6.com/issues/26)_ _[`issue #24`](http://vscext-project.autojs6.com/issues/24)_ _[`issue #23`](http://vscext-project.autojs6.com/issues/23)_"
+        }
+      ]
+    },
+    "v1.0.10": {
+      "released_date": "2024/12/28",
+      "entries": [
+        {
+          "category": "feature",
+          "text": "Ajout de boutons à icônes pour les opérations de base de l'extension dans la barre de menu de l'éditeur VSCode"
+        },
+        {
+          "category": "feature",
+          "text": "Ajout d'entrées de menu contextuel pour les opérations de base de l'extension dans l'explorateur VSCode"
+        },
+        {
+          "category": "improvement",
+          "text": "Dans la fenêtre de sélection, appuyer sur Entrée lorsqu'aucun élément n'est coché sélectionne l'élément sous le curseur"
+        },
+        {
+          "category": "improvement",
+          "text": "Le titre de la fenêtre de sélection de connexion affiche les adresses IP disponibles et prend en charge davantage d'adresses utilisables"
+        },
+        {
+          "category": "improvement",
+          "text": "La connexion par réseau local en mode serveur affiche toutes les interfaces réseau disponibles avec leurs détails"
+        },
+        {
+          "category": "improvement",
+          "text": "Lors de la création d'un projet, le nom du projet et le suffixe du nom de paquet dans le fichier de configuration s'adaptent automatiquement au nom du répertoire (avec conversion en pinyin)"
+        }
+      ]
+    },
+    "v1.0.9": {
+      "released_date": "2023/11/15",
+      "entries": [
+        {
+          "category": "fix",
+          "text": "Correction de l'apparition possible de Not Found lors de l'exécution de npm install _[`issue #1`](https://github.com/SuperMonster003/AutoJs6-TypeScript-Declarations/issues/1#issuecomment-1758808581)_"
+        },
+        {
+          "category": "fix",
+          "text": "Correction de fichiers pouvant être omis lors de la copie à la création d'un projet dans un répertoire existant"
+        },
+        {
+          "category": "improvement",
+          "text": "Après la création du projet, exécuter npm install ou npm run dts pour déployer les fichiers de déclaration"
+        }
+      ]
+    },
+    "v1.0.8": {
+      "released_date": "2023/10/31",
+      "entries": [
+        {
+          "category": "fix",
+          "text": "Correction de l'absence d'effet de toutes les commandes"
+        }
+      ]
+    },
+    "v1.0.7": {
+      "released_date": "2023/10/30",
+      "entries": [
+        {
+          "category": "fix",
+          "text": "Correction de l'impossibilité de se connecter à l'adresse serveur AutoJs6 saisie lorsqu'elle est valide et correspond partiellement à l'historique"
+        },
+        {
+          "category": "improvement",
+          "text": "Ajout d'une vérification des fichiers nécessaires aux projets AutoJs6 et des indications correspondantes"
+        },
+        {
+          "category": "improvement",
+          "text": "Lors de l'enregistrement d'un fichier sans nom sur l'appareil, détection automatique de son type et ajout de l'extension"
+        }
+      ]
+    },
+    "v1.0.6": {
+      "released_date": "2023/07/21",
+      "entries": [
+        {
+          "category": "fix",
+          "text": "Correction de la troncature des données de longueur lorsque la longueur d'un message envoyé par le serveur dépasse quatre chiffres décimaux _[`issue #7`](http://vscext-project.autojs6.com/issues/7)_ _[`issue #9`](http://vscext-project.autojs6.com/issues/9)_"
+        }
+      ]
+    },
+    "v1.0.5": {
+      "released_date": "2023/07/06",
+      "entries": [
+        {
+          "category": "feature",
+          "text": "Prise en charge de l'exécution des commandes de l'extension avec des paramètres via le protocole HTTP _[`issue #6`](http://vscext-project.autojs6.com/issues/6)_"
+        },
+        {
+          "category": "feature",
+          "text": "L'historique des clients déjà connectés peut afficher l'heure de la dernière connexion"
+        },
+        {
+          "category": "fix",
+          "text": "Correction de l'impossibilité d'enregistrer des fichiers sur l'appareil et d'exécuter ou d'enregistrer des projets _[`issue #5`](http://vscext-project.autojs6.com/issues/5)_"
+        },
+        {
+          "category": "improvement",
+          "text": "Ajout de descriptions détaillées à la fenêtre de sélection des commandes pour aider à comprendre et choisir le mode de connexion approprié"
+        },
+        {
+          "category": "improvement",
+          "text": "Vérification bidirectionnelle des versions entre l'extension VSCode et AutoJs6, avec signalement des résultats anormaux"
+        },
+        {
+          "category": "improvement",
+          "text": "Détection et signalement des connexions répétées d'un même appareil par la même méthode"
+        },
+        {
+          "category": "improvement",
+          "text": "Ajout d'une demande de confirmation avant d'effacer l'historique des appareils connectés"
+        }
+      ]
+    },
+    "v1.0.4": {
+      "released_date": "2022/02/05",
+      "entries": [
+        {
+          "category": "fix",
+          "text": "Correction de la concaténation incorrecte lorsque AutoJs6 produit un journal volumineux en une seule fois _[`issue #4`](http://vscext-project.autojs6.com/issues/4)_"
+        },
+        {
+          "category": "fix",
+          "text": "Correction du transfert automatique du focus vers le panneau de sortie (OUTPUT) après la connexion d'un nouvel appareil"
+        }
+      ]
+    },
+    "v1.0.3": {
+      "released_date": "2022/01/05",
+      "entries": [
+        {
+          "category": "fix",
+          "text": "Correction de l'impossibilité d'exécuter un script dans VSCode lorsque le panneau de sortie (OUTPUT) a le focus"
+        }
+      ]
+    },
+    "v1.0.2": {
+      "released_date": "2022/01/02",
+      "entries": [
+        {
+          "category": "fix",
+          "text": "Correction de l'impossibilité d'établir une connexion dans VSCode sans historique d'appareils connectés"
+        }
+      ]
+    },
+    "v1.0.1": {
+      "released_date": "2022/01/01",
+      "entries": [
+        {
+          "category": "feature",
+          "text": "Prise en charge des connexions client (LAN) et serveur (LAN/ADB) (Ref to [Auto.js Pro](http://www.autojs.cc/))"
+        }
+      ]
+    },
+    "v1.0.0": {
+      "released_date": "2021/12/07",
+      "entries": [
+        {
+          "category": "improvement",
+          "text": "Affichage des journaux en temps réel dans le panneau OUTPUT (Sortie) de VSCode (Ref to [710850609](https://github.com/710850609))"
+        }
+      ]
+    }
+  }
+}

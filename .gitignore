@@ -16,3 +16,5 @@ package-lock.json
 sync.ffs_db
 debug.log
 .internal/harness_cmd.txt
+
+__pycache__/

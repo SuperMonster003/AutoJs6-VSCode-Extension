@@ -19,3 +19,10 @@ test-*.js
 test-*.ts
 token.txt
 package-lock.json
+
+.python/**
+.github/**
+.readme/*.json
+.readme/template_*.md
+.changelog/*.json
+.changelog/template_*.md
