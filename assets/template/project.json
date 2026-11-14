@@ -3,10 +3,14 @@
     "encryptLevel": 0,
     "useFeatures": [],
     "launchConfig": {
-        "displaySplash": true,
-        "hideLogs": false,
-        "splashText": "Powered by AutoJs6",
-        "stableMode": false
+        "logsVisible": true,
+        "splashVisible": true,
+        "launcherVisible": true,
+        "logShortcutVisible": false,
+        "settingsShortcutVisible": false,
+        "runOnBoot": false,
+        "requiresSharedStorage": false,
+        "slug": "Powered by AutoJs6"
     },
     "main": "main.js",
     "name": "%PROJECT_NAME_PLACEHOLDER%",
